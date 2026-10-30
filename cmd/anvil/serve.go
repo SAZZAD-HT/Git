@@ -1,0 +1,170 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"anvil/internal/api"
+	"anvil/internal/config"
+	"anvil/internal/events"
+	"anvil/internal/git/gitcmd"
+	"anvil/internal/httpserver"
+	"anvil/internal/logging"
+	"anvil/internal/queue"
+	"anvil/internal/service"
+	"anvil/internal/store"
+	"anvil/internal/version"
+	"anvil/web"
+)
+
+// serviceName is the Windows service name and the systemd unit name.
+const serviceName = "Anvil"
+
+// dataSubdirs are created under storage.data_dir at startup.
+var dataSubdirs = []string{"repos", "logs", "blobs", "tmp"}
+
+func runServe(ctx context.Context, args []string) error {
+	fs, cfgPath := newFlags("serve")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	main := func(ctx context.Context) error { return serve(ctx, *cfgPath) }
+	if handled, err := service.RunAsServiceIfNeeded(serviceName, main); handled {
+		return err
+	}
+	return main(ctx)
+}
+
+// serve is the composition root. It follows the startup sequence in
+// docs/reference/03-architecture-overview.md §4.3 and returns when ctx is cancelled.
+func serve(ctx context.Context, cfgPath string) error {
+	start := time.Now()
+
+	// 1. Configuration and logging.
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	logger, logCloser, err := logging.New(cfg.Log)
+	if err != nil {
+		return err
+	}
+	defer logCloser.Close()
+	ctx = logging.WithContext(ctx, logger)
+	logger.Info("starting", "version", version.Get().String(), "config", cfgPath, "data_dir", cfg.Storage.DataDir)
+
+	// 2. Git.
+	gitVersion, err := gitcmd.Init(cfg.Git.Binary)
+	if err != nil {
+		return err
+	}
+
+	// 3. Database and migrations (FR-ADM-08).
+	if err := ensureDataDirs(cfg.Storage.DataDir); err != nil {
+		return err
+	}
+	db, err := store.Open(ctx, cfg.Database, cfg.Storage.DataDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	applied, err := db.Migrate(ctx, false)
+	if err != nil {
+		return err
+	}
+	if len(applied) > 0 {
+		logger.Info("database migrated", "applied", applied)
+	}
+	if _, err := loadSecretKey(cfg); err != nil {
+		return err
+	}
+
+	// 4. (P3) Hook scripts are checked and reinstalled here.
+
+	// 5. Background machinery.
+	bus := events.NewBus(db)
+	_ = bus // services subscribe from P3 on
+	q := queue.New(db, 10*time.Minute)
+	workCtx, stopWork := context.WithCancel(ctx)
+	waitWorkers := q.Start(workCtx, 4)
+	defer func() { stopWork(); waitWorkers() }()
+
+	// 6. HTTP.
+	srv := httpserver.New(httpserver.Deps{
+		Config: cfg,
+		Logger: logger,
+		Checkers: []httpserver.ReadyChecker{
+			dbCheck{db},
+			gitCheck{},
+		},
+		API: api.Deps{GitVersion: gitVersion.String()},
+		SPA: web.Dist(),
+	})
+	mainLn, internalLn, err := srv.Listen()
+	if err != nil {
+		return err
+	}
+	logger.Info("listening", "addr", mainLn.Addr().String(), "internal_addr", internalLn.Addr().String(),
+		"public_url", cfg.Server.PublicURL, "git", gitVersion.String(), "startup_ms", time.Since(start).Milliseconds())
+
+	// 7. Run until Ctrl+C, SIGTERM or service stop, then shut down gracefully.
+	err = srv.Serve(ctx, mainLn, internalLn)
+	logger.Info("stopped")
+	return err
+}
+
+func ensureDataDirs(dataDir string) error {
+	for _, d := range append([]string{""}, dataSubdirs...) {
+		if err := os.MkdirAll(filepath.Join(dataDir, d), 0o750); err != nil {
+			return fmt.Errorf("create data directory: %w", err)
+		}
+	}
+	return nil
+}
+
+// loadSecretKey returns security.secret_key, falling back to <data_dir>/secret.key.
+func loadSecretKey(cfg *config.Config) (string, error) {
+	if cfg.Security.SecretKey != "" {
+		return cfg.Security.SecretKey, nil
+	}
+	b, err := os.ReadFile(filepath.Join(cfg.Storage.DataDir, "secret.key"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", errors.New("no secret key: set security.secret_key or run `anvil init` to create <data_dir>/secret.key")
+	}
+	return string(b), err
+}
+
+// dbCheck reports ready when the database answers and no migration is pending.
+type dbCheck struct{ db *store.DB }
+
+func (dbCheck) Name() string { return "database" }
+
+func (c dbCheck) Ready(ctx context.Context) error {
+	if err := c.db.Ping(ctx); err != nil {
+		return err
+	}
+	pending, err := c.db.PendingMigrations(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("pending migrations: %v", pending)
+	}
+	return nil
+}
+
+// gitCheck reports ready when gitcmd.Init has found a usable git.
+type gitCheck struct{}
+
+func (gitCheck) Name() string { return "git" }
+
+func (gitCheck) Ready(context.Context) error {
+	if _, _, ok := gitcmd.Installed(); !ok {
+		return errors.New("git not initialised")
+	}
+	return nil
+}

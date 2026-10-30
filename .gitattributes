@@ -1,0 +1,7 @@
+# Store text as LF in the repository on every OS (docs/reference/12-cross-platform.md §2.1).
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.svg text eol=lf

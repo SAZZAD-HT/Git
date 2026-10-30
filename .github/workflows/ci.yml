@@ -1,0 +1,62 @@
+# Project CI (until Anvil can host itself): lint and test on Linux and Windows for every
+# push and pull request (NFR-PORT-04), plus a no-cgo cross-build of every release target.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Lint
+        run: go run ./tools/devtool lint
+      - name: Test
+        run: go run ./tools/devtool test
+      - name: Smoke test (TC-SMK-01)
+        shell: bash
+        run: |
+          go run ./tools/devtool build
+          bin=bin/anvil; [ "$RUNNER_OS" = Windows ] && bin=bin/anvil.exe
+          $bin init --config smoke/anvil.toml
+          ANVIL_SERVER_HTTP_ADDR=127.0.0.1:3900 $bin serve --config smoke/anvil.toml &
+          for i in $(seq 1 50); do
+            curl -sf http://127.0.0.1:3900/readyz && exit 0
+            sleep 0.1
+          done
+          echo "/readyz did not return 200 within 5 s"; exit 1
+
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build all release targets without cgo (TC-NFR-07)
+        run: go run ./tools/devtool dist
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the documentation site
+        run: |
+          npm --prefix site ci
+          npm --prefix site run build

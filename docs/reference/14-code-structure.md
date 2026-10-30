@@ -573,7 +573,7 @@ func SecurityHeaders(next http.Handler) http.Handler
 // each with a Mount(r chi.Router, deps Deps) function. Shared helpers:
 func decodeJSON(r *http.Request, dst any) error        // 1 MiB limit, unknown fields rejected
 func writeJSON(w http.ResponseWriter, status int, v any)
-func writeError(w http.ResponseWriter, r *http.Request, err error)  // errs.* → HTTP (docs/06 §1)
+func WriteError(w http.ResponseWriter, r *http.Request, err error)  // errs.* → HTTP (docs/06 §1); exported because httpserver uses it for 404s and panics
 ```
 
 ### 4.23 `internal/runner`
@@ -630,7 +630,7 @@ func ReplaceFile(src, dst string) error
 func RestrictToOwner(path string) error
 
 // service
-func Install(name, displayName, exe string, args []string) error   // systemd unit or Windows service
+func Install(spec Spec) error   // systemd unit or Windows service; Spec holds name, display name, exe, args, user, work dir
 func Uninstall(name string) error
 // RunAsServiceIfNeeded detects being started by the Windows SCM and runs main under its control.
 func RunAsServiceIfNeeded(name string, main func(ctx context.Context) error) (handled bool, err error)
