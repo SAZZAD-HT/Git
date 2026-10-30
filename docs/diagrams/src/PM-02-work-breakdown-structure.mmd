@@ -1,0 +1,31 @@
+---
+title: "PM-02 Work Breakdown Structure"
+---
+flowchart TB
+  root["<b>1 Anvil 1.0</b>"]
+  root --> w1["1.1 Project management"]
+  root --> w2["1.2 Requirements & design"]
+  root --> w3["1.3 Platform foundation"]
+  root --> w4["1.4 Identity & access"]
+  root --> w5["1.5 Git hosting"]
+  root --> w6["1.6 Collaboration"]
+  root --> w7["1.7 CI/CD engine"]
+  root --> w8["1.8 Runner"]
+  root --> w9["1.9 Publishing"]
+  root --> w10["1.10 Web client"]
+  root --> w11["1.11 Architecture Explorer"]
+  root --> w12["1.12 Quality assurance"]
+  root --> w13["1.13 Release & documentation"]
+
+  w2 --> w2a["1.2.1 SRS"] & w2b["1.2.2 SDD + UML"] & w2c["1.2.3 Test plan"]
+  w3 --> w3a["1.3.1 Config, logging"] & w3b["1.3.2 Store + migrations"] & w3c["1.3.3 HTTP server"] & w3d["1.3.4 Events + queue"] & w3e["1.3.5 Dev tooling + project CI"]
+  w4 --> w4a["1.4.1 Users, sessions"] & w4b["1.4.2 Tokens"] & w4c["1.4.3 Authorizer"]
+  w5 --> w5a["1.5.1 gitcmd + Repository"] & w5b["1.5.2 Smart HTTP"] & w5c["1.5.3 Hooks + protection"] & w5d["1.5.4 Content browsing"]
+  w6 --> w6a["1.6.1 Issues"] & w6b["1.6.2 Pull requests"] & w6c["1.6.3 Review + merge"]
+  w7 --> w7a["1.7.1 IR + parsers"] & w7b["1.7.2 Expressions"] & w7c["1.7.3 Trigger"] & w7d["1.7.4 Scheduler + runner API"] & w7e["1.7.5 Logs + secrets"]
+  w8 --> w8a["1.8.1 Client + poller"] & w8b["1.8.2 Executor + shells"] & w8c["1.8.3 Process groups"] & w8d["1.8.4 Built-in actions"]
+  w9 --> w9a["1.9.1 Artifacts + blob store"] & w9b["1.9.2 Releases"] & w9c["1.9.3 Packages"] & w9d["1.9.4 Deployments"]
+  w10 --> w10a["1.10.1 Shell + auth pages"] & w10b["1.10.2 Repo + PR pages"] & w10c["1.10.3 CI pages"] & w10d["1.10.4 Admin pages"]
+  w11 --> w11a["1.11.1 Tracing"] & w11b["1.11.2 Explorer UI"] & w11c["1.11.3 Guided tours"]
+  w12 --> w12a["1.12.1 Test automation"] & w12b["1.12.2 Performance + security"] & w12c["1.12.3 Acceptance"]
+  w13 --> w13a["1.13.1 Packaging"] & w13b["1.13.2 User + admin guides"] & w13c["1.13.3 Reference docs"]

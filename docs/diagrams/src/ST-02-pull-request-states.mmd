@@ -1,0 +1,16 @@
+---
+title: "ST-02 Pull Request Lifecycle (UML State Machine Diagram)"
+---
+stateDiagram-v2
+  [*] --> Open: opened
+  state Open {
+    [*] --> checking
+    checking --> clean: merge-tree ok
+    checking --> conflict: merge-tree conflicts
+    clean --> checking: head or base pushed
+    conflict --> checking: head or base pushed
+  }
+  Open --> Merged: merge [clean, checks green, CAS ok]
+  Open --> Closed: close
+  Closed --> Open: reopen
+  Merged --> [*]

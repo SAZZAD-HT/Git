@@ -1,0 +1,80 @@
+---
+title: "CD-02 Git Hosting Subsystem (UML Class Diagram)"
+---
+classDiagram
+  direction TB
+  class Handler {
+    <<smarthttp>>
+    -Deps deps
+    +ServeHTTP(w, r)
+    -serveInfoRefs(w, r, repo, service)
+    -serveRPC(w, r, repo, service)
+    -hookEnv(actor, repo, pushID) List~string~
+    -decodeBody(r) Reader
+  }
+  class Cmd {
+    <<gitcmd>>
+    -List~string~ args
+    -string dir
+    -List~string~ env
+    -Duration timeout
+    +WithDir(dir) Cmd
+    +WithEnv(kv) Cmd
+    +WithTimeout(d) Cmd
+    +WithStdin(r) Cmd
+    +Output(ctx) bytes
+    +Stream(ctx, w) error
+  }
+  class GitRepository {
+    <<git.Repository>>
+    -string path
+    -CatFilePool pool
+    +ResolveCommit(ctx, rev) string
+    +ListTree(ctx, sha, path) List~TreeEntry~
+    +ReadBlob(ctx, sha, path) Reader
+    +Log(ctx, rev, opts) List~Commit~
+    +Diff(ctx, base, head, threeDot) Diff
+    +MergeTree(ctx, baseTip, head) Result
+    +CommitTree(ctx, tree, parents, msg) string
+    +UpdateRef(ctx, ref, newSHA, oldSHA) error
+    +Archive(ctx, rev, format, w) error
+    +Maintain(ctx) error
+  }
+  class CatFilePool {
+    -Map processes
+    +Get(repoPath) CatFile
+    +CloseIdle(maxIdle)
+  }
+  class Hooks {
+    <<hooks>>
+    +Install(repoPath, anvilBin, cfgPath) error
+    +RunClient(ctx, name, stdin, stderr, env) int
+    +InternalAPI(deps) Handler
+  }
+  class ReposService {
+    <<repos.Service>>
+    +Create(ctx, actor, in) Repo
+    +Get(ctx, actor, owner, name) Repo
+    +PathFor(owner, name) string
+    +CheckPush(ctx, repoID, pusherID, updates) Decision
+    +AfterPush(ctx, repoID, pusherID, updates) List~string~
+  }
+  class Authorizer {
+    <<auth>>
+    +Permission(ctx, actor, repo) Level
+    +Require(ctx, actor, repo, level) error
+  }
+  class Bus {
+    <<events>>
+    +Publish(ctx, ev) error
+    +Subscribe(ctx, filter, afterID) Subscription
+  }
+
+  Handler --> Authorizer : authorizes
+  Handler --> ReposService : resolves repo
+  Handler ..> Cmd : spawns upload-pack / receive-pack
+  GitRepository ..> Cmd : runs
+  GitRepository *-- CatFilePool
+  ReposService --> GitRepository : opens
+  ReposService --> Bus : publishes git.push
+  Hooks --> ReposService : CheckPush / AfterPush

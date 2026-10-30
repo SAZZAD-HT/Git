@@ -1,0 +1,66 @@
+---
+title: "CD-05 Authentication, Authorization and Secrets (UML Class Diagram)"
+---
+classDiagram
+  direction LR
+  class Actor {
+    +ActorKind kind
+    +int64 userID
+    +int64 runnerID
+    +int64 jobID
+    +int64 repoID
+    +List~string~ scopes
+    +bool isAdmin
+  }
+  class ActorKind {
+    <<enumeration>>
+    Anonymous
+    User
+    Runner
+    Job
+    System
+  }
+  class Level {
+    <<enumeration>>
+    None
+    Read
+    Write
+    Admin
+  }
+  class AuthService {
+    +Login(ctx, user, pass, ip, ua) Session
+    +Logout(ctx, cookie) error
+    +ActorFromRequest(ctx, r) Actor
+    +CreateToken(ctx, userID, name, scopes, exp) Token
+    +RevokeToken(ctx, userID, tokenID) error
+  }
+  class Authorizer {
+    +Permission(ctx, actor, repo) Level
+    +Require(ctx, actor, repo, level) error
+  }
+  class PasswordHasher {
+    +HashPassword(p) string
+    +VerifyPassword(encoded, p) bool
+  }
+  class TokenFactory {
+    +NewToken(prefix) Token
+  }
+  class SecretsService {
+    -bytes masterKey
+    +Put(ctx, actor, repo, name, value) error
+    +Names(ctx, actor, repo) List~string~
+    +ForJob(ctx, job) Map
+  }
+  class Cipher {
+    +Encrypt(plain) Sealed
+    +Decrypt(sealed) bytes
+  }
+
+  AuthService --> PasswordHasher
+  AuthService --> TokenFactory
+  AuthService ..> Actor : produces
+  Actor --> ActorKind
+  Authorizer ..> Actor : evaluates
+  Authorizer ..> Level : returns
+  SecretsService --> Cipher : AES-256-GCM
+  SecretsService --> Authorizer

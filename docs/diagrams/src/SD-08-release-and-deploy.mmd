@@ -1,0 +1,40 @@
+---
+title: "SD-08 Tag, Release and Deploy (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor D as Developer
+  participant A as Anvil server
+  participant RW as Runner (windows)
+  participant RL as Runner (linux)
+  participant RD as Runner (deploy, prod server)
+  actor O as Repository Admin
+
+  D->>A: git push origin v1.4.0
+  A->>A: git.tag.created → trigger matches tags: [v*]
+  par build on both OSes
+    A->>RW: job build-windows
+    RW->>A: upload artifact app-windows
+  and
+    A->>RL: job build-linux
+    RL->>A: upload artifact app-linux
+  end
+  A->>RL: job release (needs both builds)
+  RL->>A: download artifacts
+  RL->>A: POST /releases {tag_name: v1.4.0}
+  RL->>A: POST /releases/{id}/assets (zip, tar.gz)
+  A->>A: Publish(release.published)
+  A-->>O: deploy job waiting (when: manual)
+  O->>A: click "Run" on deploy job
+  A->>RD: job deploy (environment: production)
+  A->>A: deployments row: in_progress
+  RD->>A: GET /releases/latest/assets/app-linux.tar.gz
+  RD->>RD: stop service, unpack, start, health check /healthz
+  alt health check fails
+    RD->>RD: roll back to previous version
+    RD->>A: finish failure
+    A->>A: deployment: failure
+  else healthy
+    RD->>A: finish success
+    A->>A: deployment: success (production = v1.4.0)
+  end

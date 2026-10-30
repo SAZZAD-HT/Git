@@ -1,0 +1,28 @@
+---
+title: "UC-04 Administration and Insight (UML Use Case Diagram)"
+---
+flowchart LR
+  sadmin["👤<br/>Site Admin"]
+  dev["👤<br/>Developer"]
+  op["👤<br/>Operator"]
+
+  subgraph anvil["Anvil — Administration & Insight"]
+    direction TB
+    a1(["Manage users"])
+    a2(["Manage instance runners"])
+    a3(["Edit instance settings"])
+    a4(["Inspect task queue"])
+    a5(["View audit log"])
+    a6(["Install / upgrade server"])
+    a7(["Back up / restore"])
+    a8(["Run health diagnostics (doctor)"])
+    a9(["View live architecture"])
+    a10(["Replay a request trace"])
+    a11(["Follow guided tour"])
+  end
+
+  sadmin --- a1 & a2 & a3 & a4 & a5
+  op --- a6 & a7 & a8
+  dev --- a9 & a10 & a11
+  a10 -. "«extend»" .-> a9
+  a11 -. "«extend»" .-> a9

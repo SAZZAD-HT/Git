@@ -1,0 +1,24 @@
+---
+title: "PM-01 Project Schedule (Gantt Chart) — 1 developer, assumed start 2 Nov 2026"
+---
+gantt
+  dateFormat YYYY-MM-DD
+  axisFormat %d %b
+  section Planning
+  P0 Requirements & design docs   :done, p0, 2026-10-26, 1w
+  section Core platform
+  P1 Foundation                   :p1, 2026-11-02, 2w
+  P2 Identity & access            :p2, after p1, 2w
+  P3 Git hosting & browsing       :p3, after p2, 4w
+  P4 Issues & pull requests       :p4, after p3, 4w
+  section CI/CD
+  P5 CI engine & runner           :p5, after p4, 6w
+  P6 Publishing                   :p6, after p5, 3w
+  section Insight & release
+  P7 Architecture Explorer        :p7, after p6, 3w
+  P8 Hardening & v1.0             :p8, after p7, 3w
+  section Milestones
+  M1 Docs approved                :milestone, m1, 2026-11-02, 0d
+  M3 Self-hosted git              :milestone, m3, after p3, 0d
+  M5 Dogfooding CI                :milestone, m5, after p5, 0d
+  M8 Release 1.0                  :milestone, m8, after p8, 0d

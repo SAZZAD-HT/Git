@@ -1,0 +1,18 @@
+---
+title: "ST-03 Runner Lifecycle (UML State Machine Diagram)"
+---
+stateDiagram-v2
+  [*] --> online: registered with registration token
+  state online {
+    [*] --> idle
+    idle --> busy: claims job
+    busy --> idle: job finished (capacity free)
+    busy --> busy: claims another job [capacity left]
+  }
+  online --> offline: no heartbeat for 90 s
+  offline --> online: heartbeat received
+  online --> disabled: admin disables
+  offline --> disabled: admin disables
+  disabled --> online: admin enables
+  disabled --> [*]: admin deletes
+  offline --> [*]: admin deletes

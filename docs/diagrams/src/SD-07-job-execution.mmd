@@ -1,0 +1,42 @@
+---
+title: "SD-07 Runner Claims and Executes a Job (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  participant P as runner.Poller
+  participant E as runner.Executor
+  participant SH as shell process (PowerShell / bash)
+  participant M as Masker
+  participant API as runnerapi
+  participant S as scheduler.Service
+  participant L as logs.Store
+
+  P->>API: POST /jobs/request {labels}
+  API->>S: Claim(runner)
+  alt no matching job within 30 s
+    S-->>API: nil
+    API-->>P: 204 No Content
+  else job available
+    S->>S: UPDATE jobs SET running WHERE status=queued (CAS)
+    S-->>API: Assignment + job token
+    API-->>P: 201 JobPayload
+    P->>E: Execute(job)
+    E->>E: NewWorkspace, Checkout(sha, job token)
+    loop each step
+      E->>E: evaluate condition, Interpolate ${{ }}, Render script
+      E->>SH: procgroup.Start(script)
+      loop output
+        SH-->>M: stdout / stderr bytes
+        M->>API: PATCH /jobs/{id}/log (Content-Range offset)
+        API->>L: Append(offset, data)
+        API-->>M: 202 {cancel: false}
+      end
+      SH-->>E: exit code
+      E->>API: PUT /jobs/{id}/steps/{n} {status, log range}
+    end
+    E->>API: POST /jobs/{id}/artifacts (zip)
+    E->>API: PUT /jobs/{id}/finish {status, exit_code, outputs}
+    API->>S: FinishJob(jobID, result)
+    S->>S: advance DAG, recompute run status
+    E->>E: Workspace.Cleanup()
+  end

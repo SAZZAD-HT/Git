@@ -1,0 +1,36 @@
+---
+title: "UC-03 CI/CD and Publishing (UML Use Case Diagram)"
+---
+flowchart LR
+  dev["👤<br/>Developer"]
+  radmin["👤<br/>Repository Admin"]
+  runner["⚙<br/>«system»<br/>Runner"]
+  target["⚙<br/>«system»<br/>Deploy Target"]
+
+  subgraph anvil["Anvil — CI/CD & Publishing"]
+    direction TB
+    p1(["Trigger pipeline by push / PR / tag"])
+    p2(["Start pipeline manually"])
+    p3(["View pipeline graph & live logs"])
+    p4(["Cancel / re-run pipeline"])
+    p5(["Approve manual job"])
+    p6(["Manage secrets"])
+    p7(["Register runner"])
+    p8(["Claim & execute job"])
+    p9(["Upload logs & artifacts"])
+    p10(["Create release"])
+    p11(["Publish package"])
+    p12(["Record deployment"])
+    p13(["Parse pipeline file (GitHub / GitLab format)"])
+  end
+
+  dev --- p1 & p2 & p3 & p4
+  radmin --- p5 & p6 & p7
+  runner --- p8 & p9
+  p8 --- target
+  p1 -. "«include»" .-> p13
+  p2 -. "«include»" .-> p13
+  p8 -. "«include»" .-> p9
+  p10 -. "«extend»" .-> p8
+  p11 -. "«extend»" .-> p8
+  p12 -. "«extend»" .-> p8

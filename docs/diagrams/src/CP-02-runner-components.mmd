@@ -1,0 +1,28 @@
+---
+title: "CP-02 anvil-runner Components (UML Component Diagram)"
+---
+flowchart LR
+  subgraph runner["«executable» anvil-runner"]
+    direction TB
+    cli["«component»<br/>cmd: register · run · install-service"]
+    poller["«component»<br/>poller"]
+    client["«component»<br/>client (runner API)"]
+    exec["«component»<br/>executor"]
+    ws["«component»<br/>workspace"]
+    co["«component»<br/>checkout"]
+    sh["«component»<br/>shell renderer"]
+    pg["«component»<br/>procgroup<br/>Job Object / pgid"]
+    mask["«component»<br/>log masker"]
+    bi["«component»<br/>built-in actions"]
+    cli --> poller --> exec
+    poller --> client
+    exec --> ws & co & sh & pg & mask & bi
+    mask --> client
+    bi --> client
+  end
+  server["«executable»<br/>anvil server"]
+  gitbin["«executable»<br/>git"]
+  shells["«executable»<br/>PowerShell / bash / sh / cmd"]
+  client -- "HTTPS runner API" --> server
+  co --> gitbin
+  pg --> shells

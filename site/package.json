@@ -1,0 +1,12 @@
+{
+  "name": "anvil-docs-site",
+  "private": true,
+  "description": "Builds the Anvil documentation website from docs/*.md",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "marked": "15.0.12"
+  }
+}

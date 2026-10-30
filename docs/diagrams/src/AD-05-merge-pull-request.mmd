@@ -1,0 +1,24 @@
+---
+title: "AD-05 Merge a Pull Request (UML Activity Diagram)"
+---
+flowchart TB
+  start((●)) --> d1{User has write access?}
+  d1 -- no --> e1[403] --> stop((◉))
+  d1 -- yes --> d2{PR open and head = expected sha?}
+  d2 -- no --> e2[409 'PR changed'] --> stop
+  d2 -- yes --> d3{Required checks green?}
+  d3 -- no --> e3[409 'checks pending or failed'] --> stop
+  d3 -- yes --> a1[Read base tip]
+  a1 --> a2[git merge-tree base head]
+  a2 --> d4{Conflicts?}
+  d4 -- yes --> e4[409 + conflicting files] --> stop
+  d4 -- no --> d5{Strategy}
+  d5 -- merge --> m1[commit-tree, parents = base, head]
+  d5 -- squash --> m2[commit-tree, parents = base]
+  m1 --> a3[update-ref base: new, expected old = base tip]
+  m2 --> a3
+  a3 --> d6{CAS succeeded?}
+  d6 -- no --> e5[409 'base moved, retry'] --> stop
+  d6 -- yes --> a4[Mark PR merged, close issue, add system comment]
+  a4 --> a5[Publish pull.merged + git.push]
+  a5 --> ok[200] --> stop2((◉))

@@ -1,0 +1,32 @@
+---
+title: "AD-02 Pipeline Trigger Evaluation (UML Activity Diagram)"
+---
+flowchart TB
+  start((●)) --> a1[Dequeue ci.evaluate task]
+  a1 --> d1{"Head commit has [skip ci]?"}
+  d1 -- yes --> stop1((◉))
+  d1 -- no --> a2[List .github/workflows/* and .gitlab-ci.yml at commit]
+  a2 --> d2{Any pipeline files?}
+  d2 -- no --> stop1
+  d2 -- yes --> loop[Take next file]
+  loop --> d3{Parsed IR cached for blob sha?}
+  d3 -- yes --> a4[Use cached IR]
+  d3 -- no --> a3[Parse with GitHub or GitLab parser]
+  a3 --> d4{Valid?}
+  d4 -- no --> inv[Create run with status 'invalid' + error line] --> next
+  d4 -- yes --> a4
+  a4 --> d5{Event and branch/tag filters match?}
+  d5 -- no --> next
+  d5 -- yes --> d6{Path filters set?}
+  d6 -- yes --> a5[Compute changed paths] --> d7{Any path matches?}
+  d7 -- no --> next
+  d7 -- yes --> a6
+  d6 -- no --> a6[Expand matrix, evaluate job rules]
+  a6 --> d8{Fork pull request?}
+  d8 -- yes --> a7[Mark: no secrets, read-only token, needs approval]
+  d8 -- no --> a8
+  a7 --> a8[Create run + jobs in one transaction]
+  a8 --> a9[Wake waiting runners]
+  a9 --> next{More files?}
+  next -- yes --> loop
+  next -- no --> stop2((◉))

@@ -1,0 +1,33 @@
+---
+title: "AD-04 Runner Executes a Job (UML Activity Diagram)"
+---
+flowchart TB
+  start((●)) --> a1[Long-poll for a job]
+  a1 --> d1{Job received?}
+  d1 -- no --> a1
+  d1 -- yes --> a2[Create workspace]
+  a2 --> a3[Download artifacts from needed jobs]
+  a3 --> a4[Next step]
+  a4 --> d2{Step condition true?}
+  d2 -- no --> sk[Mark step skipped] --> d5
+  d2 -- yes --> d3{Built-in action?}
+  d3 -- yes --> b1[Run built-in: checkout / upload / download / release / package]
+  d3 -- no --> b2[Interpolate expressions, render script for shell]
+  b2 --> b3[Start process in group / Job Object]
+  b3 --> b4[Stream masked output to server]
+  b4 --> d4{Cancel flag received?}
+  d4 -- yes --> k[Kill process tree] --> fin
+  d4 -- no --> b5[Wait for exit code]
+  b1 --> r[Record step result]
+  b5 --> r
+  r --> d6{Step failed and not continue-on-error?}
+  d6 -- yes --> fail[Job result = failure]
+  d6 -- no --> d5{More steps?}
+  d5 -- yes --> a4
+  d5 -- no --> okk[Job result = success]
+  fail --> al[Run 'always' steps e.g. after_script]
+  okk --> up[Upload artifacts per 'when' rule]
+  al --> up
+  up --> fin[Report finish]
+  fin --> cl[Delete workspace]
+  cl --> a1

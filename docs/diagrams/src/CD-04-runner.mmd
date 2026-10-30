@@ -1,0 +1,80 @@
+---
+title: "CD-04 Runner anvil-runner (UML Class Diagram)"
+---
+classDiagram
+  direction TB
+  class Client {
+    -string baseURL
+    -string runnerToken
+    +Register(ctx, regToken, info) Registration
+    +RequestJob(ctx, labels) JobPayload
+    +AppendLog(ctx, job, offset, data) bool
+    +UpdateStep(ctx, job, update) bool
+    +UploadArtifact(ctx, job, name, r) error
+    +DownloadArtifact(ctx, job, name, w) error
+    +Finish(ctx, job, res) error
+  }
+  class Poller {
+    -int capacity
+    +Run(ctx, cfg, client) error
+  }
+  class Executor {
+    +Execute(ctx, client, job, cfg) JobResult
+    -runStep(ctx, step, env) StepResult
+  }
+  class Workspace {
+    +string root
+    +string src
+    +string tmp
+    +string scripts
+    +Cleanup() error
+  }
+  class Checkout {
+    +Checkout(ctx, job, dir, opts) error
+  }
+  class ShellRenderer {
+    +Detect() Shells
+    +Render(step, shell, checkEachLine) Script
+  }
+  class Group {
+    <<procgroup>>
+    +Start(cmd) Group
+    +Wait() int
+    +Kill() error
+  }
+  class GroupWindows {
+    -Handle jobObject
+  }
+  class GroupUnix {
+    -int pgid
+  }
+  class Masker {
+    -List~string~ secrets
+    -bytes holdBack
+    +Write(p) int
+    +Flush() error
+  }
+  class Builtins {
+    +RunBuiltin(ctx, step, env) error
+  }
+  class JobPayload {
+    +int64 jobID
+    +string jobToken
+    +Commit commit
+    +ModelJob job
+    +Map secrets
+    +Map variables
+  }
+
+  Poller --> Client : long-poll
+  Poller --> Executor : one per slot
+  Executor --> Workspace
+  Executor --> Checkout
+  Executor --> ShellRenderer
+  Executor --> Group
+  Executor --> Masker
+  Executor --> Builtins
+  Executor ..> JobPayload : runs
+  Group <|-- GroupWindows
+  Group <|-- GroupUnix
+  Masker --> Client : log chunks

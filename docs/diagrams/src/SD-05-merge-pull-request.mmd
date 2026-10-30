@@ -1,0 +1,40 @@
+---
+title: "SD-05 Merge Pull Request with Compare-and-Swap (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor U as Developer
+  participant API as api.PullsHandler
+  participant P as pulls.Service
+  participant Z as auth.Authorizer
+  participant DB as store
+  participant G as git.Repository
+  participant EV as events.Bus
+
+  U->>API: POST /pulls/7/merge {strategy, expected_head_sha}
+  API->>P: Merge(ctx, actor, repo, 7, req)
+  P->>Z: Require(actor, repo, Write)
+  P->>DB: load PR, protection rule, required checks
+  alt PR closed, head moved, or required checks not green
+    P-->>API: errs.Conflict / errs.Forbidden
+    API-->>U: 409 / 403 with reason
+  end
+  P->>G: ResolveCommit(main) → baseTip
+  P->>G: MergeTree(baseTip, headSha)
+  alt conflicts
+    P-->>API: errs.Conflict(files)
+    API-->>U: 409 conflict files
+  end
+  P->>G: CommitTree(tree, parents, message, author)
+  Note right of G: merge → parents [baseTip, head]<br/>squash → parents [baseTip]
+  G-->>P: newSha
+  P->>G: UpdateRef(refs/heads/main, newSha, baseTip)
+  alt main moved since baseTip
+    G-->>P: errs.Conflict
+    P-->>API: errs.Conflict
+    API-->>U: 409 "base branch changed, retry"
+  end
+  P->>DB: Tx: merged_at, merged_by, merge_commit_sha, issue state=closed, system comment
+  P->>EV: Publish(pull.merged) and Publish(git.push for main)
+  P-->>API: Pull (merged)
+  API-->>U: 200
