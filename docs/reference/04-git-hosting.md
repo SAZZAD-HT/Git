@@ -128,8 +128,10 @@ Hook scripts are tiny `sh` scripts. They call the **same `anvil` binary** in hoo
 ```sh
 #!/bin/sh
 # Installed by Anvil — do not edit. Reinstalled on upgrade.
-exec "/opt/anvil/anvil" hook --config "/etc/anvil/anvil.toml" post-receive
+exec '/opt/anvil/anvil' hook post-receive
 ```
+
+The binary path is single-quoted (an embedded `'` is written as `'\''`) so `$`, `` ` `` and `\` in a Unix install path reach `exec` literally.
 
 ```mermaid
 sequenceDiagram
