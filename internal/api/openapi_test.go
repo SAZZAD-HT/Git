@@ -20,6 +20,8 @@ import (
 	"anvil/internal/config"
 	"anvil/internal/httpserver"
 	"anvil/internal/logging"
+	"anvil/internal/issues"
+	"anvil/internal/pulls"
 	"anvil/internal/repos"
 	"anvil/internal/users"
 )
@@ -64,7 +66,7 @@ func routerOperations(t *testing.T) map[string]string {
 	srv := httpserver.New(httpserver.Deps{
 		Config: config.Default(),
 		Logger: logging.NewWithWriter(io.Discard, "text", slog.LevelError),
-		API:    api.Deps{Auth: &auth.Service{}, Users: &users.Service{}, Repos: &repos.Service{}},
+		API:    api.Deps{Auth: &auth.Service{}, Users: &users.Service{}, Repos: &repos.Service{}, Issues: &issues.Service{}, Pulls: &pulls.Service{}},
 		SPA:    fstest.MapFS{"index.html": {Data: []byte("<html>")}},
 	})
 	routes, ok := srv.Handler().(chi.Routes)

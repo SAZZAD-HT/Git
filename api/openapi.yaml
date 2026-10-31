@@ -47,6 +47,10 @@ tags:
     description: Repository settings, collaborators and branch protection.
   - name: content
     description: Browsing repository content (branches, tags, files, commits, diffs, archives).
+  - name: issues
+    description: Issues, comments and labels. Issues and pull requests share one number sequence.
+  - name: pulls
+    description: Pull requests - opening, mergeability, reviews and merging.
 
 paths:
   /healthz:
@@ -1271,6 +1275,535 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/repos/{owner}/{repo}/issues:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [issues]
+      operationId: listIssues
+      summary: List issues
+      description: |
+        Requires read access. Newest first. Pull requests are excluded unless `type=all`.
+        An unknown label or author matches nothing.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      parameters:
+        - name: state
+          in: query
+          schema: {type: string, enum: [open, closed, all], default: open}
+        - name: label
+          in: query
+          description: Label name.
+          schema: {type: string}
+        - name: author
+          in: query
+          description: Username of the author.
+          schema: {type: string}
+        - name: q
+          in: query
+          description: Text to find in the title or body (case-insensitive).
+          schema: {type: string}
+        - name: type
+          in: query
+          schema: {type: string, enum: [issues, all], default: issues}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of issues.
+          headers:
+            X-Total-Count: {$ref: '#/components/headers/XTotalCount'}
+            Link: {$ref: '#/components/headers/Link'}
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Issue'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [issues]
+      operationId: createIssue
+      summary: Open an issue
+      description: Any signed-in user who can read the repository. `label_ids` are applied only for writers.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateIssueRequest'}
+      responses:
+        '201':
+          description: The new issue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Issue'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/issues/{n}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    get:
+      tags: [issues]
+      operationId: getIssue
+      summary: Get an issue or pull request
+      description: Requires read access. Works for pull requests too (their issue fields).
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The issue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Issue'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [issues]
+      operationId: updateIssue
+      summary: Edit, close or reopen an issue
+      description: |
+        The author may change title, body and state; writers may also change labels.
+        Closing or reopening adds a system comment.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateIssueRequest'}
+      responses:
+        '200':
+          description: The updated issue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Issue'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/issues/{n}/comments:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    get:
+      tags: [issues]
+      operationId: listComments
+      summary: List the timeline of an issue or pull request
+      description: Requires read access. Comments, reviews, inline review comments and system events, oldest first.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The timeline.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Comment'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [issues]
+      operationId: addComment
+      summary: Comment on an issue or pull request
+      description: Any signed-in reader.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CommentBody'}
+      responses:
+        '201':
+          description: The new comment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/comments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: id
+        in: path
+        required: true
+        description: Comment id.
+        schema: {type: integer, format: int64}
+    patch:
+      tags: [issues]
+      operationId: editComment
+      summary: Edit a comment
+      description: Its author or a repository admin. System comments cannot be edited.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CommentBody'}
+      responses:
+        '200':
+          description: The edited comment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [issues]
+      operationId: deleteComment
+      summary: Delete a comment
+      description: Its author or a repository admin.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/labels:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [issues]
+      operationId: listLabels
+      summary: List labels
+      description: Requires read access.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The labels, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Label'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [issues]
+      operationId: createLabel
+      summary: Create a label
+      description: Requires write access.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LabelInput'}
+      responses:
+        '201':
+          description: The new label.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Label'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/labels/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: id
+        in: path
+        required: true
+        description: Label id.
+        schema: {type: integer, format: int64}
+    patch:
+      tags: [issues]
+      operationId: updateLabel
+      summary: Rename or recolour a label
+      description: Requires write access.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LabelInput'}
+      responses:
+        '200':
+          description: The updated label.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Label'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [issues]
+      operationId: deleteLabel
+      summary: Delete a label
+      description: Requires write access. The label is removed from every issue.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/pulls:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [pulls]
+      operationId: listPulls
+      summary: List pull requests
+      description: Requires read access. Newest first.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      parameters:
+        - name: state
+          in: query
+          schema: {type: string, enum: [open, closed, all], default: open}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of pull requests.
+          headers:
+            X-Total-Count: {$ref: '#/components/headers/XTotalCount'}
+            Link: {$ref: '#/components/headers/Link'}
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Pull'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [pulls]
+      operationId: openPull
+      summary: Open a pull request
+      description: |
+        Any signed-in reader. `head` must be a branch of the same repository with commits that
+        are not on `base` (forks arrive later). 409 if an open pull request for the same
+        branches exists.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenPullRequest'}
+      responses:
+        '201':
+          description: The new pull request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Pull'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/pulls/{n}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    get:
+      tags: [pulls]
+      operationId: getPull
+      summary: Get a pull request
+      description: Requires read access. 404 if the number is an issue.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The pull request, with its merge status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Pull'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [pulls]
+      operationId: updatePull
+      summary: Edit, close or reopen a pull request
+      description: Same rules as editing an issue. A merged pull request cannot be reopened (409).
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateIssueRequest'}
+      responses:
+        '200':
+          description: The updated issue fields.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Issue'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/pulls/{n}/compare:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    get:
+      tags: [pulls]
+      operationId: comparePull
+      summary: Commits and changed files of a pull request
+      description: |
+        Requires read access. While open, compared with the live base branch; once merged,
+        with the base tip recorded at merge time, so the diff stays the pull request's own change.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The comparison.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CompareView'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/pulls/{n}/reviews:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    post:
+      tags: [pulls]
+      operationId: submitReview
+      summary: Submit a review
+      description: |
+        Any signed-in reader may comment. Authors cannot approve or request changes on their
+        own pull request (403). Inline comments are attached to the current head commit.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReviewRequest'}
+      responses:
+        '201':
+          description: The review (a timeline entry of kind `review`).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/repos/{owner}/{repo}/pulls/{n}/merge:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Number'
+    post:
+      tags: [pulls]
+      operationId: mergePull
+      summary: Merge a pull request
+      description: |
+        Requires write access. Merges with a merge commit or squashes, without a working tree,
+        and moves the base branch with a compare-and-swap update. 409 when the pull request is
+        closed or merged, has conflicts, its head moved past `expected_head_sha`, or the base
+        branch moved during the merge (reload and retry).
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MergeRequest'}
+      responses:
+        '200':
+          description: The merged pull request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Pull'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1292,6 +1825,12 @@ components:
         are the token scopes it needs (`repo:write` implies `repo:read`).
 
   parameters:
+    Number:
+      name: n
+      in: path
+      required: true
+      description: Issue or pull request number.
+      schema: {type: integer, format: int64, minimum: 1}
     Owner:
       name: owner
       in: path
@@ -2049,3 +2588,128 @@ components:
         behind_base:
           type: boolean
           description: Base has commits that head lacks.
+    Label:
+      type: object
+      required: [id, name, color]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        color: {type: string, pattern: '^#[0-9a-fA-F]{6}$', example: '#1d76db'}
+    LabelInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        id: {type: integer, format: int64, description: Ignored; the id comes from the URL.}
+        name: {type: string, minLength: 1, maxLength: 50}
+        color: {type: string, pattern: '^#[0-9a-fA-F]{6}$', description: 'Default #6b7280.'}
+    Issue:
+      type: object
+      required: [number, title, body, state, is_pull, author, comments, labels, created_at, updated_at]
+      properties:
+        number: {type: integer, format: int64, description: Shared sequence with pull requests.}
+        title: {type: string}
+        body: {type: string, description: Markdown.}
+        state: {type: string, enum: [open, closed]}
+        is_pull: {type: boolean}
+        author: {type: string}
+        comments: {type: integer, description: Number of plain comments.}
+        labels:
+          type: array
+          items: {$ref: '#/components/schemas/Label'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time}
+    CreateIssueRequest:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 255}
+        body: {type: string}
+        label_ids:
+          type: array
+          items: {type: integer, format: int64}
+    UpdateIssueRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 255}
+        body: {type: string}
+        state: {type: string, enum: [open, closed]}
+        label_ids:
+          type: array
+          items: {type: integer, format: int64}
+          description: Replaces all labels. Writers only.
+    Comment:
+      type: object
+      required: [id, author, body, kind, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64}
+        author: {type: string, description: Empty for system comments.}
+        body: {type: string}
+        kind: {type: string, enum: [comment, review, system]}
+        review_state: {type: string, enum: [comment, approve, request_changes]}
+        review_id: {type: integer, format: int64, description: Set on inline review comments.}
+        commit_sha: {type: string}
+        path: {type: string}
+        line: {type: integer}
+        side: {type: string, enum: [old, new]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    CommentBody:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body: {type: string, minLength: 1}
+    Pull:
+      allOf:
+        - $ref: '#/components/schemas/Issue'
+        - type: object
+          required: [base, head, head_sha, merge_status, conflict_files, merged]
+          properties:
+            base: {type: string, description: Target branch.}
+            head: {type: string, description: Source branch.}
+            head_sha: {type: string}
+            merge_status: {type: string, enum: [unknown, checking, clean, conflict]}
+            conflict_files:
+              type: array
+              items: {type: string}
+            merged: {type: boolean}
+            merged_at: {type: string, format: date-time}
+            merge_commit_sha: {type: string}
+    OpenPullRequest:
+      type: object
+      required: [title, base, head]
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 255}
+        body: {type: string}
+        base: {type: string}
+        head: {type: string}
+    ReviewRequest:
+      type: object
+      required: [event]
+      additionalProperties: false
+      properties:
+        event: {type: string, enum: [comment, approve, request_changes]}
+        body: {type: string}
+        comments:
+          type: array
+          items:
+            type: object
+            required: [path, line, side, body]
+            additionalProperties: false
+            properties:
+              path: {type: string}
+              line: {type: integer, minimum: 1}
+              side: {type: string, enum: [old, new]}
+              body: {type: string}
+    MergeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        strategy: {type: string, enum: [merge, squash], default: merge}
+        message: {type: string, description: Commit message; a default is used when empty.}
+        expected_head_sha: {type: string, description: Refuse with 409 if the head moved past this commit.}
