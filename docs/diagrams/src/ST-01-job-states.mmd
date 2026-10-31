@@ -1,0 +1,23 @@
+---
+title: "ST-01 Job Lifecycle (UML State Machine Diagram)"
+---
+stateDiagram-v2
+  [*] --> waiting: created, has unfinished needs
+  [*] --> queued: created, no needs
+  [*] --> manual: created, when manual
+  waiting --> queued: needs finished [condition true]
+  waiting --> skipped: needs finished [condition false]
+  waiting --> cancelled: run cancelled
+  manual --> queued: user clicks Run
+  manual --> cancelled: run cancelled
+  queued --> running: runner claims (CAS)
+  queued --> cancelled: run cancelled
+  running --> success: exit code 0
+  running --> failure: exit code non-zero / timeout / runner lost
+  running --> cancelling: user cancels
+  cancelling --> cancelled: runner confirms / 60 s elapsed
+  failure --> queued: retry [attempt less than retry + 1]
+  success --> [*]
+  failure --> [*]
+  skipped --> [*]
+  cancelled --> [*]

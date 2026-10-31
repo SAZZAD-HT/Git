@@ -1,0 +1,32 @@
+---
+title: "SD-02 Clone / Fetch over Smart HTTP (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor C as git client
+  participant H as smarthttp.Handler
+  participant A as auth.Service
+  participant R as repos.Service
+  participant Z as auth.Authorizer
+  participant G as git upload-pack (process)
+
+  C->>H: GET /alice/demo.git/info/refs?service=git-upload-pack
+  H->>A: ActorFromRequest(r)
+  A-->>H: Actor (anonymous or user)
+  H->>R: resolve alice/demo
+  H->>Z: Require(actor, repo, Read)
+  alt private repo and anonymous
+    Z-->>H: errs.NotFound
+    H-->>C: 401 WWW-Authenticate: Basic
+    C->>H: retry with Authorization: Basic user:PAT
+  end
+  H->>G: spawn upload-pack --stateless-rpc --advertise-refs (GIT_PROTOCOL from header)
+  G-->>H: ref advertisement
+  H-->>C: 200 application/x-git-upload-pack-advertisement
+  C->>H: POST /alice/demo.git/git-upload-pack (wants / haves)
+  H->>G: spawn upload-pack --stateless-rpc, pipe body to stdin
+  loop stream
+    G-->>H: packfile bytes
+    H-->>C: packfile bytes (no buffering)
+  end
+  Note over H,G: if the client disconnects, ctx is cancelled and the git process is killed

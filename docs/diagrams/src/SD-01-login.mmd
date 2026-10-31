@@ -1,0 +1,36 @@
+---
+title: "SD-01 Sign In (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor U as Developer
+  participant B as Browser (SPA)
+  participant MW as httpserver middleware
+  participant H as api.AuthHandler
+  participant A as auth.Service
+  participant DB as store
+
+  U->>B: enter username + password
+  B->>MW: POST /api/v1/auth/login
+  MW->>MW: RateLimit (per IP + account)
+  MW->>H: Login(request)
+  H->>A: Login(ctx, user, pass, ip, ua)
+  A->>DB: UserByUsername(user)
+  alt user not found or inactive
+    A->>A: VerifyPassword(dummyHash) (equal timing)
+    A-->>H: errs.Unauthenticated
+    H-->>B: 401 "Invalid username or password"
+  else user found
+    A->>A: VerifyPassword(hash, pass) — argon2id
+    alt password wrong
+      A->>DB: record failure (audit event)
+      A-->>H: errs.Unauthenticated
+      H-->>B: 401 "Invalid username or password"
+    else password correct
+      A->>A: NewToken() → session id + CSRF token
+      A->>DB: INSERT sessions(id_hash, csrf, expires_at)
+      A-->>H: Session
+      H-->>B: 200 {user, csrf_token} + Set-Cookie anvil_session (HttpOnly, SameSite=Lax)
+      B-->>U: dashboard
+    end
+  end

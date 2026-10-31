@@ -1,0 +1,167 @@
+---
+title: "ER-01 Database Schema (Entity-Relationship Diagram)"
+---
+erDiagram
+  users {
+    int id PK
+    text username_lower UK
+    text email UK
+    text password_hash
+    bool is_admin
+    bool is_active
+  }
+  sessions {
+    text id_hash PK
+    int user_id FK
+    text csrf_token
+    int expires_at
+  }
+  access_tokens {
+    int id PK
+    int user_id FK
+    text token_hash UK
+    text scopes
+  }
+  repositories {
+    int id PK
+    int owner_id FK
+    text name_lower
+    text visibility
+    text default_branch
+    int fork_of_id FK
+    int next_index
+  }
+  collaborators {
+    int repo_id PK, FK
+    int user_id PK, FK
+    text role
+  }
+  protected_branches {
+    int id PK
+    int repo_id FK
+    text pattern
+  }
+  issues {
+    int id PK
+    int repo_id FK
+    int number
+    int author_id FK
+    text state
+    bool is_pull
+  }
+  comments {
+    int id PK
+    int issue_id FK
+    int author_id FK
+    text kind
+  }
+  pull_requests {
+    int id PK
+    int issue_id FK
+    text base_branch
+    text head_sha
+    text merge_status
+  }
+  runs {
+    int id PK
+    int repo_id FK
+    int number
+    text format
+    text commit_sha
+    text status
+  }
+  jobs {
+    int id PK
+    int run_id FK
+    text key
+    text status
+    int runner_id FK
+    int log_size
+  }
+  job_steps {
+    int id PK
+    int job_id FK
+    int log_start
+    int log_end
+  }
+  runners {
+    int id PK
+    text token_hash UK
+    text labels
+    text status
+  }
+  artifacts {
+    int id PK
+    int job_id FK
+    text blob_key
+    int expires_at
+  }
+  releases {
+    int id PK
+    int repo_id FK
+    text tag_name
+  }
+  release_assets {
+    int id PK
+    int release_id FK
+    text blob_key
+  }
+  packages {
+    int id PK
+    int repo_id FK
+    text name
+    text version
+  }
+  package_files {
+    int id PK
+    int package_id FK
+    text blob_key
+  }
+  deployments {
+    int id PK
+    int repo_id FK
+    int job_id FK
+    text environment
+    text status
+  }
+  secrets {
+    int id PK
+    int repo_id FK
+    text name
+    blob ciphertext
+  }
+  events {
+    int id PK
+    text type
+    int repo_id FK
+    text payload
+  }
+  tasks {
+    int id PK
+    text kind
+    text status
+    int run_after
+  }
+
+  users ||--o{ sessions : has
+  users ||--o{ access_tokens : owns
+  users ||--o{ repositories : owns
+  repositories ||--o{ collaborators : grants
+  users ||--o{ collaborators : is
+  repositories ||--o{ protected_branches : has
+  repositories ||--o{ issues : has
+  issues ||--o{ comments : has
+  issues ||--o| pull_requests : extends
+  repositories ||--o{ runs : has
+  runs ||--|{ jobs : contains
+  jobs ||--o{ job_steps : contains
+  runners |o--o{ jobs : executes
+  jobs ||--o{ artifacts : uploads
+  repositories ||--o{ releases : has
+  releases ||--o{ release_assets : has
+  repositories ||--o{ packages : has
+  packages ||--|{ package_files : has
+  repositories ||--o{ deployments : has
+  jobs ||--o{ deployments : performs
+  repositories ||--o{ secrets : has
+  repositories ||--o{ events : about

@@ -1,0 +1,41 @@
+---
+title: "SD-06 Pipeline Trigger Evaluation (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  participant Q as queue worker
+  participant T as trigger.Service
+  participant G as git.Repository
+  participant PG as parser/github
+  participant PL as parser/gitlab
+  participant X as expr
+  participant S as scheduler.Service
+  participant DB as store
+  participant N as Notifier
+
+  Q->>T: EvaluatePush(task{repo, ref, old, new})
+  T->>G: Log(new, 1) — read head commit message
+  alt message contains [skip ci]
+    T-->>Q: done (no runs)
+  end
+  T->>G: ListTree(new, ".github/workflows") + ReadBlob(".gitlab-ci.yml")
+  loop each pipeline file
+    alt GitHub format
+      T->>PG: Parse(data, source)
+      PG-->>T: Pipeline (IR)
+    else GitLab format
+      T->>PL: Parse(data, readFile)
+      PL-->>T: Pipeline (IR)
+    end
+    T->>G: ChangedPaths(old, new)
+    T->>X: evaluate triggers / workflow:rules
+    alt matches
+      T->>T: expand matrix, evaluate job rules
+      T->>S: CreateRun(repo, sha, ref, pipeline)
+      S->>DB: Tx: INSERT run + jobs (queued / waiting / manual)
+      S->>N: Broadcast()
+    else invalid file
+      T->>DB: INSERT run(status=invalid, error with line number)
+    end
+  end
+  T-->>Q: done

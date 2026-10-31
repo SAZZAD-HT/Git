@@ -1,0 +1,45 @@
+---
+title: "UC-01 System Use Case Overview (UML Use Case Diagram)"
+---
+flowchart LR
+  subgraph actors["Actors"]
+    direction TB
+    sadmin["👤<br/>Site Admin"]
+    radmin["👤<br/>Repository Admin"]
+    dev["👤<br/>Developer"]
+    visitor["👤<br/>Visitor"]
+    gitc["⚙ «system»<br/>Git Client"]
+    runner["⚙ «system»<br/>Runner"]
+    sadmin -. "«generalization»" .-> radmin
+    radmin -. "«generalization»" .-> dev
+    dev -. "«generalization»" .-> visitor
+  end
+
+  subgraph anvil["Anvil — system boundary"]
+    direction TB
+    uc11(["UC-11 Administer instance"])
+    uc3(["UC-3 Manage repositories"])
+    uc8(["UC-8 Publish releases & packages"])
+    uc9(["UC-9 Deploy to environments"])
+    uc2(["UC-2 Sign in / manage account"])
+    uc5(["UC-5 Track issues"])
+    uc6(["UC-6 Review & merge pull requests"])
+    uc7(["UC-7 Run CI/CD pipelines"])
+    uc1(["UC-1 Browse public repositories"])
+    uc10(["UC-10 Explore system architecture"])
+    uc4(["UC-4 Clone / fetch / push code"])
+    uc12(["UC-12 Execute CI jobs"])
+  end
+
+  sadmin --- uc11
+  radmin --- uc3
+  radmin --- uc8
+  radmin --- uc9
+  dev --- uc2
+  dev --- uc5
+  dev --- uc6
+  dev --- uc7
+  visitor --- uc1
+  visitor --- uc10
+  gitc --- uc4
+  runner --- uc12

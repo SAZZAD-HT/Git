@@ -8,6 +8,11 @@ __pycache__/
 dist/
 build/
 coverage/
+/bin/
+# web/dist is embedded into the binary; only the placeholder is committed
+!web/dist/
+web/dist/*
+!web/dist/placeholder.html
 
 # Environment and secrets
 .env
@@ -22,3 +27,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local dev instance (devtool dev)
+/.dev/
+*.tsbuildinfo
+
+# Claude Code agent worktrees (local only)
+/.claude/worktrees/

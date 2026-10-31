@@ -1,0 +1,33 @@
+---
+title: "SD-04 Open Pull Request and Mergeability Check (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor U as Developer
+  participant API as api.PullsHandler
+  participant P as pulls.Service
+  participant DB as store
+  participant G as git.Repository
+  participant EV as events.Bus
+  participant Q as queue (worker)
+
+  U->>API: POST /repos/alice/demo/pulls {base: main, head: feature}
+  API->>P: Open(ctx, actor, repo, in)
+  P->>G: ResolveCommit(feature) → headSha
+  P->>DB: Tx: NextIssueNumber, INSERT issues(is_pull) + pull_requests(merge_status=unknown)
+  P->>G: UpdateRef(refs/pull/7/head, headSha, "")
+  P->>Q: Enqueue(pull.check_mergeable, pullID)
+  P->>EV: Publish(pull.opened)
+  P-->>API: Pull #7
+  API-->>U: 201 Pull #7
+  Q->>P: CheckMergeable(pullID)
+  P->>G: MergeTree(baseTip, headSha)
+  alt clean
+    G-->>P: tree sha
+    P->>DB: merge_status = clean
+  else conflicts
+    G-->>P: conflicting paths
+    P->>DB: merge_status = conflict, conflict_files
+  end
+  P->>EV: Publish(pull.mergeability_changed)
+  Note over EV: the trigger also receives pull.opened and starts PR pipelines

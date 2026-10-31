@@ -1,0 +1,41 @@
+---
+title: "SD-03 Push with Server Hooks (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor C as git client
+  participant H as smarthttp.Handler
+  participant RP as git receive-pack
+  participant HK as anvil hook (child process)
+  participant IA as Internal API (127.0.0.1)
+  participant R as repos.Service
+  participant EV as events.Bus
+  participant Q as queue
+
+  C->>H: POST /alice/demo.git/git-receive-pack (commands + pack)
+  H->>H: authenticate, Require(Write)
+  H->>RP: spawn with ANVIL_REPO_ID, ANVIL_PUSHER_ID, ANVIL_PUSH_ID, ANVIL_TRACE_ID, ANVIL_INTERNAL_TOKEN
+  RP->>RP: receive and verify objects
+  RP->>HK: pre-receive (stdin: old new ref)
+  HK->>IA: POST /internal/hooks/pre-receive
+  IA->>R: CheckPush(repo, pusher, updates)
+  R-->>IA: allowed / denied + message
+  IA-->>HK: decision
+  alt denied (protected branch, force push, refs/pull)
+    HK-->>RP: exit 1, stderr message
+    RP-->>H: report-status: rejected
+    H-->>C: "remote: <message>" — push rejected
+  else allowed
+    HK-->>RP: exit 0
+    RP->>RP: update refs
+    RP->>HK: post-receive
+    HK->>IA: POST /internal/hooks/post-receive
+    IA->>R: AfterPush(repo, pusher, updates)
+    R->>EV: Publish(git.push / git.tag.created)
+    EV->>Q: Enqueue(ci.evaluate, pull.sync)
+    R-->>IA: messages ("Create a pull request: …")
+    IA-->>HK: messages
+    HK-->>RP: exit 0
+    RP-->>H: report-status ok
+    H-->>C: 200 — push complete
+  end

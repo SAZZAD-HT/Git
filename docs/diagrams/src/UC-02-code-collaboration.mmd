@@ -1,0 +1,37 @@
+---
+title: "UC-02 Code Hosting and Collaboration (UML Use Case Diagram)"
+---
+flowchart LR
+  dev["👤<br/>Developer"]
+  radmin["👤<br/>Repository Admin"]
+  gitc["⚙<br/>«system»<br/>Git Client"]
+
+  subgraph anvil["Anvil — Code Hosting & Collaboration"]
+    direction TB
+    c1(["Create repository"])
+    c2(["Fork repository"])
+    c3(["Clone / fetch"])
+    c4(["Push commits"])
+    c5(["Authenticate with token"])
+    c6(["Enforce branch protection"])
+    c7(["Browse files, commits, diffs"])
+    c8(["Edit file in browser"])
+    c9(["Open issue"])
+    c10(["Comment"])
+    c11(["Open pull request"])
+    c12(["Review pull request"])
+    c13(["Merge pull request"])
+    c14(["Check mergeability"])
+    c15(["Manage collaborators"])
+    c16(["Configure protected branches"])
+  end
+
+  dev --- c1 & c2 & c7 & c8 & c9 & c10 & c11 & c12 & c13
+  gitc --- c3 & c4
+  radmin --- c15 & c16
+  c3 -. "«include»" .-> c5
+  c4 -. "«include»" .-> c5
+  c4 -. "«include»" .-> c6
+  c13 -. "«include»" .-> c14
+  c13 -. "«include»" .-> c6
+  c10 -. "«extend»" .-> c12

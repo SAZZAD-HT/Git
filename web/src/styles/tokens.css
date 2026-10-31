@@ -1,0 +1,60 @@
+/* Design tokens (docs/reference/09 §6). Light values on :root; dark values apply when the
+   OS prefers dark and the user has not picked light, or when the user picked dark. */
+:root {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, 'Liberation Mono', monospace;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --radius-1: 4px; --radius-2: 8px;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --border: #d5dbe3;
+  --text: #17202b;
+  --text-muted: #5a6676;
+  --accent: #1d4f91;
+  --accent-contrast: #ffffff;
+  --focus: #2f7de1;
+  --ok: #1a7f37;
+  --ok-bg: #dafbe1;
+  --bad: #c62828;
+  --bad-bg: #ffe5e5;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0e1218;
+    --surface: #151b23;
+    --surface-2: #1c242f;
+    --border: #2d3846;
+    --text: #e3e8ef;
+    --text-muted: #98a4b3;
+    --accent: #7fb0f0;
+    --accent-contrast: #0e1218;
+    --focus: #7fb0f0;
+    --ok: #4ac26b;
+    --ok-bg: #12301c;
+    --bad: #ff7b72;
+    --bad-bg: #3a1514;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1218;
+  --surface: #151b23;
+  --surface-2: #1c242f;
+  --border: #2d3846;
+  --text: #e3e8ef;
+  --text-muted: #98a4b3;
+  --accent: #7fb0f0;
+  --accent-contrast: #0e1218;
+  --focus: #7fb0f0;
+  --ok: #4ac26b;
+  --ok-bg: #12301c;
+  --bad: #ff7b72;
+  --bad-bg: #3a1514;
+  color-scheme: dark;
+}

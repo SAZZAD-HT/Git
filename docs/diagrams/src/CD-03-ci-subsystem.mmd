@@ -1,0 +1,107 @@
+---
+title: "CD-03 CI/CD Engine, Server Side (UML Class Diagram)"
+---
+classDiagram
+  direction TB
+  class Pipeline {
+    <<model>>
+    +string name
+    +string source
+    +Format format
+    +List~Trigger~ triggers
+    +List~Job~ jobs
+    +List~string~ warnings
+    +Validate() List~Problem~
+    +TopoOrder() List~string~
+  }
+  class ModelJob {
+    <<model.Job>>
+    +string key
+    +List~string~ needs
+    +List~string~ runsOn
+    +Condition condition
+    +List~Step~ steps
+    +Duration timeout
+    +bool allowFailure
+    +List~ArtifactSpec~ artifacts
+  }
+  class Step {
+    <<model>>
+    +StepKind kind
+    +string script
+    +Shell shell
+    +bool checkEachLine
+  }
+  class Parser {
+    <<interface>>
+    +Parse(data, source) Pipeline
+  }
+  class GitHubParser {
+    <<parser/github>>
+  }
+  class GitLabParser {
+    <<parser/gitlab>>
+    -readFile(path) bytes
+  }
+  class Expr {
+    <<expr>>
+    +Parse(src, syntax) Expr
+    +Eval(ctx) Value
+    +Interpolate(s, ctx) string
+  }
+  class TriggerService {
+    <<trigger>>
+    +EvaluatePush(ctx, task) error
+    +EvaluatePull(ctx, task) error
+    +StartManual(ctx, actor, repo, ref, file, inputs) Run
+  }
+  class SchedulerService {
+    <<scheduler>>
+    -Notifier notifier
+    +CreateRun(ctx, in) Run
+    +Claim(ctx, runner) Assignment
+    +AppendLog(ctx, jobID, offset, data) bool
+    +UpdateStep(ctx, jobID, step) bool
+    +FinishJob(ctx, jobID, res) error
+    +CancelRun(ctx, actor, runID) error
+    +Rerun(ctx, actor, runID, failedOnly) Run
+    +StartLoops(ctx)
+  }
+  class Notifier {
+    +Wait(ctx, labels) bool
+    +Broadcast()
+  }
+  class RunnerAPI {
+    <<runnerapi>>
+    +Register()
+    +RequestJob()
+    +AppendLog()
+    +UpdateStep()
+    +UploadArtifact()
+    +Finish()
+  }
+  class LogStore {
+    <<logs>>
+    +Append(ctx, runID, jobID, offset, data) int64
+    +ReadFrom(ctx, runID, jobID, offset) Reader
+    +Subscribe(ctx, jobID) Channel
+  }
+  class Queue {
+    <<queue>>
+    +Enqueue(ctx, kind, payload) int64
+    +Handle(kind, fn)
+    +Start(ctx, n)
+  }
+
+  Pipeline "1" *-- "1..*" ModelJob
+  ModelJob "1" *-- "1..*" Step
+  Parser <|.. GitHubParser
+  Parser <|.. GitLabParser
+  Parser ..> Pipeline : creates
+  TriggerService --> Parser
+  TriggerService --> Expr : evaluates rules
+  TriggerService --> SchedulerService : CreateRun
+  Queue --> TriggerService : ci.evaluate tasks
+  SchedulerService *-- Notifier
+  RunnerAPI --> SchedulerService
+  SchedulerService --> LogStore

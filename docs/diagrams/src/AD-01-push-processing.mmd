@@ -1,0 +1,36 @@
+---
+title: "AD-01 Push Processing (UML Activity Diagram)"
+---
+flowchart TB
+  start((●)) --> a1[Receive POST git-receive-pack]
+  a1 --> d1{Credentials valid?}
+  d1 -- no --> e401[Return 401] --> stop1((◉))
+  d1 -- yes --> d2{Write permission?}
+  d2 -- no --> e404[Return 404 / 403] --> stop1
+  d2 -- yes --> a2[Spawn git receive-pack with ANVIL_* env]
+  a2 --> a3[Git stores objects]
+  a3 --> a4[Run pre-receive hook → internal API]
+  a4 --> d3{For each ref update}
+  d3 --> d4{Ref under refs/pull/?}
+  d4 -- yes --> rej[Reject: read-only ref]
+  d4 -- no --> d5{Branch protected?}
+  d5 -- no --> ok[Allow]
+  d5 -- yes --> d6{Deletion or non fast-forward?}
+  d6 -- yes --> rej
+  d6 -- no --> d7{Requires pull request?}
+  d7 -- yes --> rej
+  d7 -- no --> ok
+  rej --> fail[Exit 1, message shown as 'remote: …'] --> stop2((◉))
+  ok --> d8{More refs?}
+  d8 -- yes --> d3
+  d8 -- no --> a5[Git updates refs]
+  a5 --> a6[Run post-receive → internal API]
+  a6 --> fork{{fork}}
+  fork --> b1[Publish git.push / git.tag.created events]
+  fork --> b2[Set default branch on first push]
+  fork --> b3[Return messages to client]
+  b1 --> b4[Queue: ci.evaluate, pull.sync]
+  b2 --> join{{join}}
+  b3 --> join
+  b4 --> join
+  join --> done[Return report-status 200] --> stop3((◉))

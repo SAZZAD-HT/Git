@@ -1,0 +1,59 @@
+---
+title: "CP-01 anvil Server Components (UML Component Diagram)"
+---
+flowchart TB
+  subgraph anvil["«executable» anvil"]
+    direction TB
+    subgraph L1["«layer» Transport"]
+      direction LR
+      router["«component»<br/>httpserver<br/>router + middleware"]
+      restapi["«component»<br/>api<br/>REST /api/v1"]
+      smart["«component»<br/>git/smarthttp"]
+      rapi["«component»<br/>ci/runnerapi"]
+      iapi["«component»<br/>git/hooks<br/>internal API"]
+      spa["«component»<br/>SPA assets (embedded)"]
+    end
+    subgraph L2["«layer» Services"]
+      direction LR
+      auth["«component»<br/>auth"]
+      users["«component»<br/>users"]
+      repos["«component»<br/>repos"]
+      issues["«component»<br/>issues"]
+      pulls["«component»<br/>pulls"]
+      trig["«component»<br/>ci/trigger"]
+      sched["«component»<br/>ci/scheduler"]
+      pub["«component»<br/>artifacts · releases<br/>packages · deployments"]
+      sec["«component»<br/>secrets"]
+      exp["«component»<br/>explorer"]
+    end
+    subgraph L3["«layer» Infrastructure"]
+      direction LR
+      store["«component»<br/>store (SQL)"]
+      git["«component»<br/>git + gitcmd"]
+      blob["«component»<br/>blob"]
+      events["«component»<br/>events"]
+      queue["«component»<br/>queue"]
+      cimodel["«component»<br/>ci/model · parser · expr · logs"]
+    end
+  end
+  db[("«database»<br/>SQLite")]
+  fs[("«file system»<br/>data dir")]
+  gitbin["«executable»<br/>git"]
+
+  router --> restapi & smart & rapi & spa
+  restapi --> auth & users & repos & issues & pulls & trig & sched & pub & sec & exp
+  smart --> auth & repos
+  rapi --> sched & pub
+  iapi --> repos
+  repos & pulls & trig --> git
+  trig --> cimodel
+  sched --> cimodel
+  auth & users & repos & issues & pulls & sched & pub & sec --> store
+  pub --> blob
+  repos & pulls & sched & pub --> events
+  trig --> queue
+  exp --> events
+  store --> db
+  blob --> fs
+  git --> gitbin
+  gitbin --> fs

@@ -1,0 +1,31 @@
+---
+title: "SD-09 Cancel a Running Job (UML Sequence Diagram)"
+---
+sequenceDiagram
+  autonumber
+  actor U as Developer
+  participant API as api.RunsHandler
+  participant S as scheduler.Service
+  participant RA as runnerapi
+  participant E as runner.Executor
+  participant PG as procgroup.Group
+
+  U->>API: POST /runs/97/cancel
+  API->>S: CancelRun(actor, 97)
+  S->>S: queued/waiting jobs → cancelled, running jobs → cancelling
+  S-->>API: ok
+  API-->>U: 202
+  E->>RA: PATCH /jobs/812/log (next chunk or heartbeat)
+  RA->>S: AppendLog(...)
+  S-->>RA: cancel = true
+  RA-->>E: 202 {cancel: true}
+  E->>PG: Kill()
+  alt Linux
+    PG->>PG: SIGTERM to process group, wait 10 s, SIGKILL
+  else Windows
+    PG->>PG: TerminateJobObject (whole tree)
+  end
+  E->>RA: PUT /jobs/812/finish {status: cancelled}
+  RA->>S: FinishJob(812, cancelled)
+  S->>S: run status → cancelled
+  Note over S: if the runner never answers, the reaper marks the job cancelled after 60 s

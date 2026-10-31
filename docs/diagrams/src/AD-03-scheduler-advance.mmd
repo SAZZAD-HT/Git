@@ -1,0 +1,26 @@
+---
+title: "AD-03 Scheduler: Advance Run after a Job Finishes (UML Activity Diagram)"
+---
+flowchart TB
+  start((●)) --> a1[FinishJob: store result, invalidate job token]
+  a1 --> d0{Failed and retries left?}
+  d0 -- yes --> rq[Set job queued, attempt + 1] --> wake
+  d0 -- no --> a2[Begin transaction]
+  a2 --> a3[Find waiting jobs in this run]
+  a3 --> loop[Take next waiting job]
+  loop --> d1{All needs finished?}
+  d1 -- no --> nxt
+  d1 -- yes --> d2{Condition true?<br/>on_success / on_failure / always}
+  d2 -- yes --> q[Set queued]
+  d2 -- no --> s[Set skipped]
+  s --> chg[Mark 'changed']
+  q --> chg
+  chg --> nxt{More waiting jobs?}
+  nxt -- yes --> loop
+  nxt -- no --> d3{Anything changed this pass?}
+  d3 -- yes --> a3
+  d3 -- no --> a4[Recompute run status]
+  a4 --> a5[Commit transaction]
+  a5 --> a6[Publish ci.job.* / ci.run.finished events]
+  a6 --> wake[Wake runners for newly queued labels]
+  wake --> stop((◉))

@@ -1,0 +1,36 @@
+---
+title: "DP-02 Team / Production Deployment (UML Deployment Diagram)"
+---
+flowchart LR
+  subgraph clients["«device» Dev PCs"]
+    b["Browser"]
+    g["git client"]
+  end
+  subgraph edge["«device» Gateway"]
+    proxy["«artifact»<br/>Reverse proxy<br/>nginx / Caddy / IIS<br/>TLS :443"]
+  end
+  subgraph srv["«device» Anvil server"]
+    anvil["«artifact»<br/>anvil (systemd)"]
+    data[("«artifact»<br/>data dir")]
+    anvil --> data
+  end
+  subgraph bw["«device» Runner (Win)"]
+    rw["«artifact»<br/>anvil-runner<br/>labels: windows, x64"]
+  end
+  subgraph bl["«device» Runner (Linux)"]
+    rl["«artifact»<br/>anvil-runner<br/>labels: linux, x64"]
+  end
+  subgraph prod["«device» Production server"]
+    rd["«artifact»<br/>anvil-runner<br/>labels: deploy, prod-web-1"]
+    app["«artifact»<br/>Deployed app (service)"]
+    rd --> app
+  end
+  subgraph backup["«device» Backup storage"]
+    bk[("nightly anvil backup")]
+  end
+  b & g -- "HTTPS" --> proxy
+  proxy -- "HTTP :3000" --> anvil
+  rw -- "HTTPS runner API" --> proxy
+  rl -- "HTTPS runner API" --> proxy
+  rd -- "HTTPS runner API" --> proxy
+  anvil -. "anvil backup" .-> bk

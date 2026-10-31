@@ -1,0 +1,154 @@
+---
+title: "CD-01 Domain Model (UML Class Diagram)"
+---
+classDiagram
+  direction LR
+  class User {
+    +int64 id
+    +string username
+    +string email
+    +bool isAdmin
+    +bool isActive
+  }
+  class Session {
+    +string idHash
+    +string csrfToken
+    +time expiresAt
+  }
+  class AccessToken {
+    +string prefix
+    +string tokenHash
+    +List~string~ scopes
+    +time expiresAt
+  }
+  class Repository {
+    +int64 id
+    +string name
+    +Visibility visibility
+    +string defaultBranch
+    +bool isEmpty
+    +int64 nextIndex
+  }
+  class Collaborator {
+    +Role role
+  }
+  class ProtectedBranch {
+    +string pattern
+    +bool allowForcePush
+    +bool requirePullRequest
+    +List~string~ requiredChecks
+  }
+  class Issue {
+    +int64 number
+    +string title
+    +string body
+    +IssueState state
+    +bool isPull
+  }
+  class Comment {
+    +string body
+    +CommentKind kind
+    +string path
+    +int line
+  }
+  class Label {
+    +string name
+    +string color
+  }
+  class PullRequest {
+    +string baseBranch
+    +string headBranch
+    +string headSha
+    +MergeStatus mergeStatus
+    +string mergeCommitSha
+  }
+  class Run {
+    +int64 number
+    +Format format
+    +Event event
+    +string commitSha
+    +RunStatus status
+  }
+  class Job {
+    +string key
+    +List~string~ needs
+    +List~string~ runsOn
+    +JobStatus status
+    +int attempt
+    +int exitCode
+  }
+  class JobStep {
+    +int index
+    +string name
+    +StepStatus status
+    +int64 logStart
+    +int64 logEnd
+  }
+  class Runner {
+    +string name
+    +List~string~ labels
+    +string os
+    +RunnerStatus status
+  }
+  class Artifact {
+    +string name
+    +int64 size
+    +string sha256
+    +time expiresAt
+  }
+  class Release {
+    +string tagName
+    +string title
+    +bool isDraft
+  }
+  class ReleaseAsset {
+    +string name
+    +string sha256
+  }
+  class Package {
+    +string name
+    +string version
+  }
+  class PackageFile {
+    +string fileName
+    +string sha256
+  }
+  class Deployment {
+    +string environment
+    +string sha
+    +DeployStatus status
+  }
+  class Secret {
+    +string name
+    +bytes ciphertext
+  }
+  class Event {
+    +string type
+    +json payload
+    +time createdAt
+  }
+
+  User "1" --> "*" Session : has
+  User "1" --> "*" AccessToken : owns
+  User "1" --> "*" Repository : owns
+  Repository "1" *-- "*" Collaborator
+  Collaborator "*" --> "1" User
+  Repository "1" *-- "*" ProtectedBranch
+  Repository "1" *-- "*" Issue
+  Repository "*" --> "0..1" Repository : forkOf
+  Issue "1" *-- "*" Comment
+  Issue "*" --> "*" Label
+  Issue "1" -- "0..1" PullRequest : isPull
+  Repository "1" *-- "*" Run
+  Run "1" *-- "1..*" Job
+  Job "1" *-- "*" JobStep
+  Runner "0..1" --> "*" Job : executes
+  Job "1" --> "*" Artifact : uploads
+  Repository "1" *-- "*" Release
+  Release "1" *-- "*" ReleaseAsset
+  Repository "1" *-- "*" Package
+  Package "1" *-- "1..*" PackageFile
+  Repository "1" *-- "*" Deployment
+  Deployment "*" --> "1" Job
+  Repository "1" *-- "*" Secret
+  Event "*" --> "0..1" Repository : about

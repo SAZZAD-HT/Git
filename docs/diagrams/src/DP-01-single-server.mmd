@@ -1,0 +1,21 @@
+---
+title: "DP-01 Single-Machine Deployment, Windows or Linux (UML Deployment Diagram)"
+---
+flowchart LR
+  subgraph devpc["«device» Developer PC"]
+    browser["«artifact»<br/>Web browser"]
+    gitc["«artifact»<br/>git client"]
+  end
+  subgraph host["«device» Server machine — Windows 10/11 or Linux"]
+    subgraph os["«execution environment» OS service (Windows SCM / systemd)"]
+      anvil["«artifact»<br/>anvil(.exe)<br/>:3000 public, :3001 loopback"]
+    end
+    gitbin["«artifact»<br/>git ≥ 2.38<br/>(+ sh.exe on Windows)"]
+    runner["«artifact»<br/>anvil-runner(.exe)<br/>labels: windows|linux"]
+    data[("«artifact»<br/>data dir: anvil.db, repos/,<br/>logs/, blobs/, secret.key")]
+  end
+  browser -- "HTTP(S) :3000" --> anvil
+  gitc -- "HTTP(S) :3000 smart HTTP" --> anvil
+  anvil --> gitbin
+  anvil --> data
+  runner -- "HTTP :3000 runner API" --> anvil

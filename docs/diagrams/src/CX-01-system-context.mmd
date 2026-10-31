@@ -1,0 +1,15 @@
+---
+title: "CX-01 System Context (C4 Level 1)"
+---
+flowchart TB
+  dev["👤 Developer<br/>browser + git client"]
+  admin["👤 Site Admin"]
+  anvil(["<b>Anvil</b><br/>self-hosted forge + CI/CD<br/>Windows / Linux"])
+  runners["⚙ Runner machines<br/>anvil-runner, Windows or Linux"]
+  target["⚙ Deploy targets<br/>servers running released apps"]
+  smtp["✉ SMTP server<br/>(optional)"]
+  dev -- "HTTPS: web UI, REST API, git clone/push" --> anvil
+  admin -- "HTTPS: admin UI" --> anvil
+  runners -- "HTTPS: poll jobs, upload logs/artifacts" --> anvil
+  runners -- "run deploy steps" --> target
+  anvil -. "SMTP notifications" .-> smtp
