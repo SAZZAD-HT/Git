@@ -13,7 +13,9 @@ import (
 
 	"anvil/internal/auth"
 	"anvil/internal/errs"
+	"anvil/internal/issues"
 	"anvil/internal/logging"
+	"anvil/internal/pulls"
 	"anvil/internal/ratelimit"
 	"anvil/internal/repos"
 	"anvil/internal/users"
@@ -28,6 +30,8 @@ type Deps struct {
 	Auth       *auth.Service
 	Users      *users.Service
 	Repos      *repos.Service
+	Issues     *issues.Service
+	Pulls      *pulls.Service
 	// PublicURL is server.public_url, used for clone URLs.
 	PublicURL string
 	// AllowRegistration mirrors auth.allow_registration so the web UI can show or hide sign-up.

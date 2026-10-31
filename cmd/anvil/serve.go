@@ -19,7 +19,9 @@ import (
 	"anvil/internal/git/hooks"
 	"anvil/internal/git/smarthttp"
 	"anvil/internal/httpserver"
+	"anvil/internal/issues"
 	"anvil/internal/logging"
+	"anvil/internal/pulls"
 	"anvil/internal/queue"
 	"anvil/internal/repos"
 	"anvil/internal/service"
@@ -104,6 +106,13 @@ func serve(ctx context.Context, cfgPath string) error {
 		DB: db, Authorizer: auth.NewAuthorizer(db, cfg.Auth.RequireSigninView), Bus: bus,
 		Hooks: hooks.Installer{AnvilBinary: exe}, ReposDir: filepath.Join(cfg.Storage.DataDir, "repos"),
 	})
+	q := queue.New(db, 10*time.Minute)
+	issuesSvc := issues.NewService(db, reposSvc, bus)
+	pullsSvc := pulls.NewService(pulls.Deps{DB: db, Repos: reposSvc, Issues: issuesSvc, Bus: bus, Queue: q})
+	if err := followPushes(ctx, bus, pullsSvc); err != nil {
+		return err
+	}
+
 	// 4. Keep every repository's hook scripts pointing at this binary (it may have moved or been upgraded).
 	if n, err := reposSvc.EnsureHooks(ctx, exe+" "+version.Get().Version, false); err != nil {
 		logger.Warn("some repository hooks could not be reinstalled; run `anvil admin repair-hooks`", "err", err)
@@ -116,7 +125,6 @@ func serve(ctx context.Context, cfgPath string) error {
 		return err
 	}
 	go pruneSessions(ctx, authSvc)
-	q := queue.New(db, 10*time.Minute)
 	workCtx, stopWork := context.WithCancel(ctx)
 	waitWorkers := q.Start(workCtx, 4)
 	defer func() { stopWork(); waitWorkers() }()
@@ -134,6 +142,8 @@ func serve(ctx context.Context, cfgPath string) error {
 			Auth:              authSvc,
 			Users:             usersSvc,
 			Repos:             reposSvc,
+			Issues:            issuesSvc,
+			Pulls:             pullsSvc,
 			PublicURL:         cfg.Server.PublicURL,
 			AllowRegistration: cfg.Auth.AllowRegistration,
 			SecureCookies:     strings.HasPrefix(cfg.Server.PublicURL, "https://"),
@@ -162,6 +172,27 @@ func serve(ctx context.Context, cfgPath string) error {
 }
 
 // newIdentityServices builds the auth and users services. Shared by serve and the admin CLI.
+// followPushes delivers git.push events to the pull request service so pull requests track
+// their branches (FR-COLLAB-11). It runs until ctx ends.
+func followPushes(ctx context.Context, bus *events.Bus, p *pulls.Service) error {
+	sub, err := bus.Subscribe(ctx, events.Filter{TypePrefix: "git.push"}, 0)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for ev := range sub.C {
+			if ev.Gap {
+				logging.FromContext(ctx).Warn("pull requests missed some push events; they refresh on the next push")
+				continue
+			}
+			if err := p.OnPush(ctx, ev); err != nil {
+				logging.FromContext(ctx).Error("update pull requests after push", "repo_id", ev.RepoID, "err", err)
+			}
+		}
+	}()
+	return nil
+}
+
 // randomHex returns n random bytes as hex.
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)

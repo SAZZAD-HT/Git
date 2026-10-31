@@ -72,6 +72,9 @@ func (h *handlers) mountRepos(r chi.Router) {
 		r.Get("/commits/{sha}", h.getCommit)
 		r.Get("/compare/*", h.compare)
 		r.Get("/archive/*", h.archive)
+		if h.Issues != nil && h.Pulls != nil {
+			h.mountIssues(r)
+		}
 	})
 }
 

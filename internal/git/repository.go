@@ -321,6 +321,61 @@ func (r *Repository) IsAncestor(ctx context.Context, ancestor, descendant string
 	return err == nil, err
 }
 
+// MergeTree performs a three-way merge without a working tree (git merge-tree --write-tree,
+// docs/reference/04 §5.2). Git finds the merge base itself. Pass commit SHAs, not branch
+// names, so the result matches exactly what was reviewed even if a branch moves. It returns
+// the merged tree sha, or the conflicting paths (with an empty tree) when the merge does not
+// apply cleanly.
+func (r *Repository) MergeTree(ctx context.Context, baseTip, head string) (tree string, conflicts []string, err error) {
+	out, err := r.cmd("merge-tree", "--write-tree", "--name-only", "-z", "--messages", "--end-of-options", baseTip, head).Output(ctx)
+	var ee *gitcmd.ExitError
+	clean := err == nil
+	if errors.As(err, &ee) && ee.ExitCode == 1 {
+		err = nil // exit 1 means "conflicts", and the output lists them
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	// Output: <tree> NUL, then (on conflict) one conflicted path per NUL-terminated entry,
+	// then an empty entry, then informational messages.
+	parts := strings.Split(string(out), "\x00")
+	if clean {
+		return strings.TrimSpace(parts[0]), nil, nil
+	}
+	seen := map[string]bool{}
+	for _, p := range parts[1:] {
+		if p == "" {
+			break
+		}
+		if !seen[p] {
+			seen[p] = true
+			conflicts = append(conflicts, p)
+		}
+	}
+	if len(conflicts) == 0 {
+		conflicts = []string{"(unrelated histories or an unmergeable change)"}
+	}
+	return "", conflicts, nil
+}
+
+// CommitTree creates a commit object from tree with the given parents, message and
+// identities, and returns its sha. It does not move any ref.
+func (r *Repository) CommitTree(ctx context.Context, tree string, parents []string, msg string, author, committer Signature) (string, error) {
+	args := []string{"commit-tree", tree}
+	for _, p := range parents {
+		args = append(args, "-p", p)
+	}
+	date := func(t time.Time) string { return strconv.FormatInt(t.Unix(), 10) + " +0000" }
+	out, err := r.cmd(args...).WithStdin(strings.NewReader(msg)).WithEnv(
+		"GIT_AUTHOR_NAME="+author.Name, "GIT_AUTHOR_EMAIL="+author.Email, "GIT_AUTHOR_DATE="+date(author.When),
+		"GIT_COMMITTER_NAME="+committer.Name, "GIT_COMMITTER_EMAIL="+committer.Email, "GIT_COMMITTER_DATE="+date(committer.When),
+	).Output(ctx)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // MergeBase returns the best common ancestor of a and b. errs.NotFound if they share none
 // (unrelated histories).
 func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error) {
