@@ -3,9 +3,19 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { Layout } from './app/Layout';
+import { RequireAuth } from './app/RequireAuth';
+import { SessionProvider } from './app/session';
 import { applyTheme, loadTheme } from './app/theme';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { ExplorerPage } from './features/explorer/ExplorerPage';
+import { LoginPage } from './features/auth/LoginPage';
+import { RegisterPage } from './features/auth/RegisterPage';
+import { SettingsPage } from './features/settings/SettingsPage';
+import { ProfileSection } from './features/settings/ProfileSection';
+import { PasswordSection } from './features/settings/PasswordSection';
+import { TokensSection } from './features/settings/TokensSection';
+import { SessionsSection } from './features/settings/SessionsSection';
+import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { NotFoundPage } from './components/NotFoundPage';
 import './styles/tokens.css';
 import './styles/globals.css';
@@ -22,6 +32,19 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: '/', element: <DashboardPage /> },
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
+      {
+        path: '/settings',
+        element: <RequireAuth><SettingsPage /></RequireAuth>,
+        children: [
+          { index: true, element: <ProfileSection /> },
+          { path: 'password', element: <PasswordSection /> },
+          { path: 'tokens', element: <TokensSection /> },
+          { path: 'sessions', element: <SessionsSection /> },
+        ],
+      },
+      { path: '/admin/users', element: <RequireAuth admin><AdminUsersPage /></RequireAuth> },
       { path: '/explorer', element: <ExplorerPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
@@ -31,7 +54,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <SessionProvider>
+        <RouterProvider router={router} />
+      </SessionProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

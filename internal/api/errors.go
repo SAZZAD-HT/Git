@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"anvil/internal/errs"
@@ -48,7 +49,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	body.Error.Code, body.Error.Message = "internal", "Internal error. Quote request id "+body.RequestID+" when reporting it."
 	for _, m := range mapping {
 		if errors.Is(err, m.kind) {
-			status, body.Error.Code, body.Error.Message = m.status, m.code, err.Error()
+			status, body.Error.Code, body.Error.Message = m.status, m.code, userMessage(err, m.kind)
 			break
 		}
 	}
@@ -60,6 +61,17 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		logging.FromContext(r.Context()).Error("internal error", "err", err)
 	}
 	writeJSON(w, r, status, body)
+}
+
+// userMessage turns a wrapped domain error into a sentence for people: the trailing
+// ": not found"-style kind that fmt.Errorf("…: %w", errs.X) appends is removed (the code
+// field already carries it) and the first letter is capitalised. A bare kind is kept.
+func userMessage(err, kind error) string {
+	msg := strings.TrimSuffix(err.Error(), ": "+kind.Error())
+	if msg == "" {
+		msg = kind.Error()
+	}
+	return strings.ToUpper(msg[:1]) + msg[1:]
 }
 
 type requestIDKey struct{}
