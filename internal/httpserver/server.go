@@ -15,6 +15,7 @@ import (
 	"anvil/internal/api"
 	"anvil/internal/auth"
 	"anvil/internal/config"
+	"anvil/internal/git/smarthttp"
 )
 
 // ReadyChecker reports whether a dependency is ready to serve traffic. /readyz calls
@@ -34,6 +35,10 @@ type Deps struct {
 	API      api.Deps
 	// Auth authenticates API requests. Nil serves the API without authentication (tests of health endpoints).
 	Auth *auth.Service
+	// Git serves clone/fetch/push; nil disables the git routes.
+	Git *smarthttp.Handler
+	// Hooks is the internal hook API, mounted on the loopback listener; nil disables it.
+	Hooks http.Handler
 	// SPA is the built web app (index.html at its root). Paths that are not files fall
 	// back to index.html so client-side routes like /alice/demo/pulls work on reload.
 	SPA fs.FS
@@ -65,12 +70,18 @@ func New(deps Deps) *Server {
 		api.Mount(r, deps.API)
 	})
 	r.Handle("/api/*", apiNotFound)
+	if deps.Git != nil && deps.Auth != nil {
+		mountGit(r, deps)
+	}
 	r.Handle("/*", spaHandler(deps.SPA))
 
-	// The internal listener serves the hook API (P3). For now it only answers health checks.
+	// The internal listener (loopback only) serves the hook API and a health check.
 	ir := chi.NewRouter()
 	ir.Use(Trace(deps.Logger), Recover)
 	ir.Get("/healthz", healthz)
+	if deps.Hooks != nil {
+		ir.Handle("/internal/*", deps.Hooks)
+	}
 
 	return &Server{
 		deps:     deps,
@@ -142,4 +153,21 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 	return s.Serve(ctx, m, i)
+}
+
+// mountGit registers the three smart HTTP endpoints for /{owner}/{repo}[.git]/…
+// (docs/reference/04 §2). They take precedence over the SPA fallback because chi prefers
+// the more specific pattern.
+func mountGit(r chi.Router, deps Deps) {
+	r.Group(func(r chi.Router) {
+		r.Use(AuthenticateGit(deps.Auth), RateLimit(DefaultRateConfig, deps.API.ClientIP))
+		r.Get("/{owner}/{repo}/info/refs", func(w http.ResponseWriter, r *http.Request) {
+			deps.Git.InfoRefs(w, r, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"))
+		})
+		for _, svc := range []string{"git-upload-pack", "git-receive-pack"} {
+			r.Post("/{owner}/{repo}/"+svc, func(w http.ResponseWriter, r *http.Request) {
+				deps.Git.RPC(w, r, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"), svc)
+			})
+		}
+	})
 }

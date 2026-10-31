@@ -4,6 +4,15 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 
 ## Unreleased
 
+### Added (P3 Git hosting, in progress)
+
+- Create repositories (public or private, optional README), rename, change default branch, delete with confirmation.
+- `git clone`, `fetch` and `push` over HTTP(S) with a personal access token as the password; protocol v2 and gzip supported.
+- Server-side hooks: pushing a new branch prints a "Create a pull request" link; the first push to an empty repository sets its default branch.
+- Branch protection (exact names or globs such as `release/*`): blocks force-pushes, deletion, and optionally all direct pushes. The default branch cannot be deleted; `refs/pull/*` is read-only.
+- Collaborators with read, write or admin roles. Private repositories return 404 to anyone without access.
+- API for browsing: branches, tags, directory listings, files, raw downloads, commit history.
+
 ### Added (P2 Identity)
 
 - Sign in and out with username and password; browser sessions with CSRF protection (14-day sliding, 30-day absolute expiry).

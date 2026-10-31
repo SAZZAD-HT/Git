@@ -15,6 +15,7 @@ import (
 	"anvil/internal/errs"
 	"anvil/internal/logging"
 	"anvil/internal/ratelimit"
+	"anvil/internal/repos"
 	"anvil/internal/users"
 	"anvil/internal/version"
 )
@@ -26,6 +27,9 @@ type Deps struct {
 	GitVersion string
 	Auth       *auth.Service
 	Users      *users.Service
+	Repos      *repos.Service
+	// PublicURL is server.public_url, used for clone URLs.
+	PublicURL string
 	// AllowRegistration mirrors auth.allow_registration so the web UI can show or hide sign-up.
 	AllowRegistration bool
 	// SecureCookies sets the Secure flag on the session cookie (when served over HTTPS).
@@ -58,6 +62,9 @@ func Mount(r chi.Router, d Deps) {
 	h.mountAuth(r)
 	h.mountUsers(r)
 	h.mountAdmin(r)
+	if d.Repos != nil {
+		h.mountRepos(r)
+	}
 }
 
 // versionResponse is the body of GET /api/v1/version.

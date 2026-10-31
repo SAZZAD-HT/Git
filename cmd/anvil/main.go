@@ -34,6 +34,7 @@ var commands = []command{
 	{"install-service", "Install as a systemd unit or Windows service", runInstallService},
 	{"uninstall-service", "Remove the service", runUninstallService},
 	{"version", "Print version, commit and build date", runVersion},
+	{"hook", "Internal: run by git hook scripts", runHook},
 }
 
 func main() {

@@ -176,8 +176,9 @@ func (r *Repository) ResolveCommit(ctx context.Context, rev string) (string, err
 // ListTree lists the entries of directory path at commit sha (not recursive).
 func (r *Repository) ListTree(ctx context.Context, sha, path string) ([]TreeEntry, error)
 
-// ReadBlob returns a reader for the file at path in commit sha, plus its size. Uses the pooled cat-file process.
-func (r *Repository) ReadBlob(ctx context.Context, sha, path string) (io.ReadCloser, int64, error)
+// ReadBlob returns up to maxBytes of the file at path in commit sha, plus its full size.
+// (P3 uses one cat-file process per call; the pooled cat-file process comes later.)
+func (r *Repository) ReadBlob(ctx context.Context, sha, path string, maxBytes int64) ([]byte, int64, error)
 
 // Log returns up to opts.Limit commits reachable from rev, optionally limited to a path.
 func (r *Repository) Log(ctx context.Context, rev string, opts LogOptions) ([]Commit, error)
@@ -244,7 +245,7 @@ Internal functions, each documented in code: `serveInfoRefs`, `serveRPC`, `write
 ```go
 // Install writes Anvil's pre-receive, update and post-receive scripts into repoPath/hooks,
 // pointing at anvilBinary and configPath. Existing Anvil hooks are overwritten.
-func Install(repoPath, anvilBinary, configPath string) error
+func (in Installer) Install(repoPath string) error   // Installer{AnvilBinary}; implements repos.HookInstaller so repos does not import the transport layer
 
 // RunClient is the body of `anvil hook <name>`: it reads stdin, calls the internal API
 // using ANVIL_INTERNAL_URL/TOKEN from the environment, prints messages to stderr,
@@ -340,9 +341,11 @@ func (s *Service) PutFile(ctx context.Context, actor auth.Actor, owner, name str
 
 // Hook entry points (called by the internal API):
 // CheckPush applies branch protection and reserved-ref rules to a pending push.
-func (s *Service) CheckPush(ctx context.Context, repoID, pusherID int64, updates []RefUpdate) (allowed bool, message string, err error)
+// quarantineEnv carries GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES from the hook: during
+// pre-receive the pushed objects are still quarantined and invisible to a plain git command.
+func (s *Service) CheckPush(ctx context.Context, repoID int64, updates []RefUpdate, quarantineEnv []string) (allowed bool, message string, err error)
 // AfterPush records the push, sets the default branch on first push, and publishes git.* events.
-func (s *Service) AfterPush(ctx context.Context, repoID, pusherID int64, updates []RefUpdate) ([]string, error)
+func (s *Service) AfterPush(ctx context.Context, repoID, pusherID int64, updates []RefUpdate, publicURL string) ([]string, error)
 ```
 
 ### 4.12 `internal/issues`

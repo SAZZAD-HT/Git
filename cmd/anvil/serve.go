@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,9 +16,12 @@ import (
 	"anvil/internal/config"
 	"anvil/internal/events"
 	"anvil/internal/git/gitcmd"
+	"anvil/internal/git/hooks"
+	"anvil/internal/git/smarthttp"
 	"anvil/internal/httpserver"
 	"anvil/internal/logging"
 	"anvil/internal/queue"
+	"anvil/internal/repos"
 	"anvil/internal/service"
 	"anvil/internal/store"
 	"anvil/internal/users"
@@ -91,6 +96,19 @@ func serve(ctx context.Context, cfgPath string) error {
 	// 5. Background machinery.
 	bus := events.NewBus(db)
 	authSvc, usersSvc := newIdentityServices(cfg, db, bus)
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	reposSvc := repos.NewService(repos.Deps{
+		DB: db, Authorizer: auth.NewAuthorizer(db, cfg.Auth.RequireSigninView), Bus: bus,
+		Hooks: hooks.Installer{AnvilBinary: exe}, ReposDir: filepath.Join(cfg.Storage.DataDir, "repos"),
+	})
+	// The hook API trusts only callers that know this per-process secret (docs/reference/04 §3.1).
+	internalToken, err := randomHex(32)
+	if err != nil {
+		return err
+	}
 	go pruneSessions(ctx, authSvc)
 	q := queue.New(db, 10*time.Minute)
 	workCtx, stopWork := context.WithCancel(ctx)
@@ -109,13 +127,20 @@ func serve(ctx context.Context, cfgPath string) error {
 			GitVersion:        gitVersion.String(),
 			Auth:              authSvc,
 			Users:             usersSvc,
+			Repos:             reposSvc,
+			PublicURL:         cfg.Server.PublicURL,
 			AllowRegistration: cfg.Auth.AllowRegistration,
 			SecureCookies:     strings.HasPrefix(cfg.Server.PublicURL, "https://"),
 			SessionTTL:        cfg.Auth.SessionTTL.Duration,
 			ClientIP:          httpserver.ClientIP(cfg.Server.TrustedProxies),
 		},
 		Auth: authSvc,
-		SPA:  web.Dist(),
+		Git: smarthttp.New(smarthttp.Deps{
+			Repos: reposSvc, InternalURL: "http://" + cfg.Server.InternalAddr, InternalToken: internalToken,
+			MaxPushSize: int64(cfg.Git.MaxPushSize), WriteError: api.WriteError,
+		}),
+		Hooks: hooks.InternalAPI(hooks.Deps{Repos: reposSvc, Token: internalToken, PublicURL: cfg.Server.PublicURL}),
+		SPA:   web.Dist(),
 	})
 	mainLn, internalLn, err := srv.Listen()
 	if err != nil {
@@ -131,6 +156,15 @@ func serve(ctx context.Context, cfgPath string) error {
 }
 
 // newIdentityServices builds the auth and users services. Shared by serve and the admin CLI.
+// randomHex returns n random bytes as hex.
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func newIdentityServices(cfg *config.Config, db *store.DB, bus *events.Bus) (*auth.Service, *users.Service) {
 	a := auth.NewService(db, bus, auth.Config{SessionTTL: cfg.Auth.SessionTTL.Duration, AllowPasswordGit: cfg.Auth.AllowPasswordGit})
 	return a, users.NewService(db, a, bus, users.Config{AllowRegistration: cfg.Auth.AllowRegistration})

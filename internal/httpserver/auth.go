@@ -23,6 +23,17 @@ import (
 // WWW-Authenticate challenge so git prompts for a token). A stale session cookie is
 // cleared and the request continues as anonymous.
 func Authenticate(a *auth.Service, secureCookies bool) func(http.Handler) http.Handler {
+	return authenticate(a, secureCookies, true)
+}
+
+// AuthenticateGit is Authenticate for git smart HTTP routes: session cookies are ignored,
+// so only Basic or Bearer credentials count. Browsers attach cookies to cross-site
+// requests; ignoring them means a malicious page cannot push as the signed-in user.
+func AuthenticateGit(a *auth.Service) func(http.Handler) http.Handler {
+	return authenticate(a, false, false)
+}
+
+func authenticate(a *auth.Service, secureCookies, useCookies bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var c auth.Credentials
@@ -33,7 +44,7 @@ func Authenticate(a *auth.Service, secureCookies bool) func(http.Handler) http.H
 					c.BasicUser, c.BasicPassword, c.HasBasic = u, p, true
 				}
 			}
-			if ck, err := r.Cookie(api.SessionCookie); err == nil {
+			if ck, err := r.Cookie(api.SessionCookie); err == nil && useCookies {
 				c.SessionCookie = ck.Value
 			}
 			actor, stale, err := a.Authenticate(r.Context(), c)
