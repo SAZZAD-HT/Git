@@ -50,15 +50,26 @@ func (in Installer) Install(repoPath string) error {
 			_ = os.Remove(s)
 		}
 	}
-	// Forward slashes: Git for Windows' sh.exe understands C:/path/anvil.exe.
-	bin := filepath.ToSlash(in.AnvilBinary)
 	for _, name := range Names {
-		script := fmt.Sprintf("#!/bin/sh\n# Installed by Anvil — do not edit. Reinstalled on upgrade.\nexec \"%s\" hook %s\n", bin, name)
-		if err := fsutil.WriteFileAtomic(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+		if err := fsutil.WriteFileAtomic(filepath.Join(dir, name), []byte(hookScript(in.AnvilBinary, name)), 0o755); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// hookScript returns the sh script for hook name that execs the anvil binary at bin.
+func hookScript(bin, name string) string {
+	// Forward slashes: Git for Windows' sh.exe understands C:/path/anvil.exe.
+	return fmt.Sprintf("#!/bin/sh\n# Installed by Anvil — do not edit. Reinstalled on upgrade.\nexec %s hook %s\n",
+		shQuote(filepath.ToSlash(bin)), name)
+}
+
+// shQuote quotes s as a single POSIX sh word. Single quotes stop sh from expanding $, `
+// and \ (all legal in Unix paths); each embedded single quote closes the quoting, is
+// written escaped, and reopens it.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // request is the body sent to the internal API.
