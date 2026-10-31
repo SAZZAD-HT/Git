@@ -31,3 +31,6 @@ Thumbs.db
 # Local dev instance (devtool dev)
 /.dev/
 *.tsbuildinfo
+
+# Claude Code agent worktrees (local only)
+/.claude/worktrees/
