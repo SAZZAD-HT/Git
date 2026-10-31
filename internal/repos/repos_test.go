@@ -1,8 +1,10 @@
 package repos
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -238,5 +240,48 @@ func TestValidateName(t *testing.T) {
 		if (ValidateName(name) == nil) != ok {
 			t.Errorf("%q: ok=%v", name, !ok)
 		}
+	}
+}
+
+func TestCompareAndCommit(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	r, err := f.svc.Create(ctx, f.alice, CreateRepo{Name: "cmp", InitReadme: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := f.svc.Open(r)
+	work := filepath.Join(t.TempDir(), "w")
+	runGit(t, filepath.Dir(work), "clone", "-q", g.Path(), work)
+	runGit(t, work, "checkout", "-q", "-b", "feature/a")
+	if err := os.WriteFile(filepath.Join(work, "new.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-q", "-m", "Add new.txt")
+	runGit(t, work, "push", "-q", "origin", "feature/a")
+
+	v, err := f.svc.Compare(ctx, f.bob, "alice", "cmp", "main", "feature/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.AheadBy != 1 || v.Identical || v.BehindBase || len(v.Diff.Files) != 1 || v.Diff.Files[0].Status != "added" || v.Diff.Additions != 2 {
+		t.Fatalf("%+v %+v", v, v.Diff)
+	}
+	c, err := f.svc.Commit(ctx, f.bob, "alice", "cmp", v.HeadSHA)
+	if err != nil || c.Subject != "Add new.txt" || len(c.Diff.Files) != 1 {
+		t.Fatalf("%+v %v", c, err)
+	}
+	// Root commit: the whole tree is the diff.
+	root, err := f.svc.Commit(ctx, f.bob, "alice", "cmp", v.BaseSHA)
+	if err != nil || len(root.Diff.Files) != 1 || root.Diff.Files[0].NewPath != "README.md" {
+		t.Fatalf("root %+v %v", root, err)
+	}
+	if same, _ := f.svc.Compare(ctx, f.bob, "alice", "cmp", "main", "main"); !same.Identical {
+		t.Fatal("main...main not identical")
+	}
+	var zip bytes.Buffer
+	if err := f.svc.Archive(ctx, f.bob, "alice", "cmp", "feature/a", "zip", &zip); err != nil || !bytes.HasPrefix(zip.Bytes(), []byte("PK")) {
+		t.Fatalf("archive: %v (%d bytes)", err, zip.Len())
 	}
 }

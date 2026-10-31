@@ -37,7 +37,7 @@ export function RepoLayout() {
           </h1>
           {r.description && <p className="repo-desc">{r.description}</p>}
         </div>
-        <CloneButton url={r.clone_url} />
+        <CloneButton url={r.clone_url} archive={r.empty ? undefined : `/api/v1/repos/${r.owner}/${r.name}/archive/${r.default_branch}.zip`} />
       </div>
       <nav className="tabs" aria-label="Repository">
         <NavLink to={base} end>Code</NavLink>
@@ -50,7 +50,7 @@ export function RepoLayout() {
 }
 
 /** Shows the HTTPS clone URL with a copy button and a reminder to use a token (docs/reference/09 §4). */
-function CloneButton({ url }: { url: string }) {
+function CloneButton({ url, archive }: { url: string; archive?: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -73,6 +73,7 @@ function CloneButton({ url }: { url: string }) {
             <button type="button" className="button" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
           <p className="muted small">When git asks for a password, use a <Link to="/settings/tokens">personal access token</Link>.</p>
+          {archive && <a className="clone-zip" href={archive}>Download ZIP</a>}
         </div>
       )}
     </div>

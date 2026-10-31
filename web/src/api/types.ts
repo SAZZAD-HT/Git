@@ -132,3 +132,58 @@ export interface ProtectionRule {
   require_pull_request: boolean;
   required_checks: string[];
 }
+
+/** One line of a diff hunk. */
+export interface DiffLine {
+  kind: 'context' | 'add' | 'del';
+  old: number;
+  new: number;
+  text: string;
+}
+
+/** One "@@" section of a file diff. */
+export interface Hunk {
+  header: string;
+  old_start: number;
+  new_start: number;
+  lines: DiffLine[];
+}
+
+/** The change to one file. */
+export interface FileDiff {
+  old_path: string;
+  new_path: string;
+  status: 'added' | 'deleted' | 'modified' | 'renamed' | 'copied';
+  binary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: Hunk[];
+  truncated: boolean;
+}
+
+/** A parsed diff. */
+export interface Diff {
+  files: FileDiff[];
+  additions: number;
+  deletions: number;
+  truncated: boolean;
+}
+
+/** A commit with its diff. */
+export interface CommitDetail extends Commit {
+  diff?: Diff;
+}
+
+/** Body of GET /compare/{base}...{head}. */
+export interface CompareView {
+  base: string;
+  head: string;
+  base_sha: string;
+  head_sha: string;
+  merge_base: string;
+  commits: Commit[];
+  diff: Diff;
+  identical: boolean;
+  ahead_by: number;
+  behind_base: boolean;
+}

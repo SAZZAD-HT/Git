@@ -321,6 +321,20 @@ func (r *Repository) IsAncestor(ctx context.Context, ancestor, descendant string
 	return err == nil, err
 }
 
+// MergeBase returns the best common ancestor of a and b. errs.NotFound if they share none
+// (unrelated histories).
+func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error) {
+	out, err := r.cmd("merge-base", "--end-of-options", a, b).Output(ctx)
+	var ee *gitcmd.ExitError
+	if errors.As(err, &ee) && ee.ExitCode == 1 {
+		return "", fmt.Errorf("%s and %s have no common history: %w", a, b, errs.NotFound)
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // UpdateRef moves ref to newSHA only if it currently points to oldSHA (compare-and-swap).
 // This makes concurrent merges safe: the second one fails instead of silently overwriting
 // the first (docs/reference/04 §5.3). An empty oldSHA means the ref must not exist yet.

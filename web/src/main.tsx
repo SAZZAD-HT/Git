@@ -22,6 +22,8 @@ import { CodePage } from './features/repo/CodePage';
 import { BlobPage } from './features/repo/BlobPage';
 import { CommitsPage } from './features/repo/CommitsPage';
 import { RepoSettingsPage } from './features/repo/RepoSettingsPage';
+import { CommitPage } from './features/repo/CommitPage';
+import { ComparePage } from './features/repo/ComparePage';
 import { ProfilePage } from './features/users/ProfilePage';
 import { NotFoundPage } from './components/NotFoundPage';
 import './styles/tokens.css';
@@ -64,6 +66,8 @@ const router = createBrowserRouter([
           { path: 'tree/*', element: <CodePage /> },
           { path: 'blob/*', element: <BlobPage /> },
           { path: 'commits', element: <CommitsPage /> },
+          { path: 'commit/:sha', element: <CommitPage /> },
+          { path: 'compare/*', element: <ComparePage /> },
           { path: 'settings', element: <RepoSettingsPage /> },
         ],
       },

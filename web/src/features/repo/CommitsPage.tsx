@@ -1,4 +1,4 @@
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import { useBranches, useCommits } from '../../api/hooks/useRepo';
 import { formatTime } from '../../components/formErrors';
 import type { RepoContext } from './RepoLayout';
@@ -33,10 +33,10 @@ export function CommitsPage() {
           {commits.data.map((c) => (
             <li key={c.sha}>
               <div>
-                <div className="commit-subject">{c.subject}</div>
+                <Link className="commit-subject" to={`/${repo.owner}/${repo.name}/commit/${c.sha}`}>{c.subject}</Link>
                 <div className="muted small"><strong>{c.author.name}</strong> committed {formatTime(c.committer.when)}</div>
               </div>
-              <code className="sha">{c.sha.slice(0, 7)}</code>
+              <Link className="sha" to={`/${repo.owner}/${repo.name}/commit/${c.sha}`}>{c.sha.slice(0, 7)}</Link>
             </li>
           ))}
         </ol>

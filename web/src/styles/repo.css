@@ -102,3 +102,28 @@ pre.plain { background: var(--surface-2); border-radius: var(--radius-1); paddin
 @media (max-width: 900px) {
   .dashboard, .profile { grid-template-columns: 1fr; }
 }
+
+/* ---- diffs ---- */
+.diff-summary { margin: var(--space-3) 0; }
+.add-count { color: var(--ok); font-weight: 600; }
+.del-count { color: var(--bad); font-weight: 600; }
+.diff-file { padding: 0; overflow: clip; } /* clip, not hidden: hidden would trap the sticky header inside the panel */
+.diff-file-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-bottom: 1px solid var(--border); flex-wrap: wrap; position: sticky; top: 58px; z-index: 2; }
+.diff-toggle { width: 28px; height: 28px; }
+.diff-path { overflow-wrap: anywhere; font-weight: 600; }
+.diff-stat { font-family: var(--font-mono); font-size: 0.85rem; }
+.diff-status { text-transform: capitalize; border: 1px solid var(--border); color: var(--text-muted); }
+.diff-added { color: var(--ok); }
+.diff-deleted { color: var(--bad); }
+.diff-table td.ln { color: var(--text-muted); min-width: 3em; }
+.hunk-head td { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--text-muted); padding: var(--space-1) var(--space-3); }
+.dl-add td { background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.dl-del td { background: color-mix(in srgb, var(--bad) 13%, transparent); }
+.dl-mark { display: inline-block; width: 1.2em; user-select: none; color: var(--text-muted); }
+.commit-head h2 { margin: 0 0 var(--space-2); }
+.commit-body { white-space: pre-wrap; font: inherit; color: var(--text-muted); margin: 0 0 var(--space-3); }
+.commit-meta { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; justify-content: space-between; border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.commit-ids { color: var(--text-muted); font-size: 0.9rem; }
+a.commit-subject { color: var(--text); text-decoration: none; }
+a.commit-subject:hover { color: var(--accent); text-decoration: underline; }
+.clone-zip { font-size: 0.9rem; }

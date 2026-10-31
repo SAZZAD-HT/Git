@@ -9,13 +9,17 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"anvil/internal/auth"
 	"anvil/internal/config"
 	"anvil/internal/events"
+	"anvil/internal/git/hooks"
+	"anvil/internal/repos"
 	"anvil/internal/store"
 	"anvil/internal/users"
+	"anvil/internal/version"
 )
 
 // runAdmin implements `anvil admin <subcommand>`: user administration without the web UI
@@ -33,8 +37,8 @@ func runAdmin(ctx context.Context, args []string) error {
 			return adminFlags(ctx, s, "deactivate", a)
 		},
 	}
-	if len(args) == 0 || subs[args[0]] == nil {
-		fmt.Fprintln(os.Stderr, "Usage: anvil admin <create-user|reset-password|promote|demote|activate|deactivate> [flags]")
+	if len(args) == 0 || (subs[args[0]] == nil && args[0] != "repair-hooks") {
+		fmt.Fprintln(os.Stderr, "Usage: anvil admin <create-user|reset-password|promote|demote|activate|deactivate|repair-hooks> [flags]")
 		return flag.ErrHelp
 	}
 	fs, cfgPath := newFlags("admin " + args[0])
@@ -53,8 +57,24 @@ func runAdmin(ctx context.Context, args []string) error {
 	if _, err := db.Migrate(ctx, false); err != nil {
 		return err
 	}
+	if args[0] == "repair-hooks" {
+		return adminRepairHooks(ctx, cfg, db)
+	}
 	_, usersSvc := newIdentityServices(cfg, db, events.NewBus(db))
 	return subs[args[0]](ctx, usersSvc, rest)
+}
+
+// adminRepairHooks implements `anvil admin repair-hooks`: rewrite the hook scripts in every
+// repository so they call this anvil binary (docs/reference/11 §4).
+func adminRepairHooks(ctx context.Context, cfg *config.Config, db *store.DB) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	svc := repos.NewService(repos.Deps{DB: db, Hooks: hooks.Installer{AnvilBinary: exe}, ReposDir: filepath.Join(cfg.Storage.DataDir, "repos")})
+	n, err := svc.EnsureHooks(ctx, exe+" "+version.Get().Version, true)
+	fmt.Printf("Reinstalled hooks in %d repositories.\n", n)
+	return err
 }
 
 // extractConfigFlag removes --config/-config (with its value) from args, storing it in dst.

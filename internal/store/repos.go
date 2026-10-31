@@ -118,6 +118,11 @@ func (q *Queries) ReposForMember(ctx context.Context, userID int64, limit int) (
 		 ORDER BY r.updated_at DESC LIMIT ?`, userID, userID, limit))
 }
 
+// AllRepos returns every repository, ordered by id. Used by maintenance jobs.
+func (q *Queries) AllRepos(ctx context.Context) ([]Repository, error) {
+	return scanRepos(q.q.QueryContext(ctx, "SELECT "+repoColumns+repoFrom+"ORDER BY r.id"))
+}
+
 // UpdateRepo writes the editable fields of r. errs.Conflict if the new name is taken.
 func (q *Queries) UpdateRepo(ctx context.Context, r *Repository, now int64) error {
 	res, err := q.q.ExecContext(ctx,

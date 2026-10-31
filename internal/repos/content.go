@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"unicode/utf8"
 
@@ -195,6 +196,74 @@ func (s *Service) Tags(ctx context.Context, actor auth.Actor, owner, name string
 		return nil, err
 	}
 	return g.Refs(ctx, "refs/tags")
+}
+
+// Commit returns one commit of owner/name with its diff. Requires read access.
+func (s *Service) Commit(ctx context.Context, actor auth.Actor, owner, name, sha string) (*git.CommitDetail, error) {
+	_, g, resolved, err := s.resolve(ctx, actor, owner, name, sha)
+	if err != nil {
+		return nil, err
+	}
+	return g.Commit(ctx, resolved, true)
+}
+
+// CompareView is what a compare page and a pull request show: the commits on head that are
+// not on base, and the combined diff since head diverged from base.
+type CompareView struct {
+	Base       string       `json:"base"`
+	Head       string       `json:"head"`
+	BaseSHA    string       `json:"base_sha"`
+	HeadSHA    string       `json:"head_sha"`
+	MergeBase  string       `json:"merge_base"`
+	Commits    []git.Commit `json:"commits"`
+	Diff       *git.Diff    `json:"diff"`
+	Identical  bool         `json:"identical"`
+	AheadBy    int          `json:"ahead_by"`
+	BehindBase bool         `json:"behind_base"` // base has commits head lacks
+}
+
+// MaxCompareCommits limits the commit list of a comparison.
+const MaxCompareCommits = 250
+
+// Compare returns the commits and three-dot diff between base and head of owner/name.
+// Requires read access. errs.NotFound if either ref is unknown.
+func (s *Service) Compare(ctx context.Context, actor auth.Actor, owner, name, base, head string) (*CompareView, error) {
+	_, g, baseSHA, err := s.resolve(ctx, actor, owner, name, base)
+	if err != nil {
+		return nil, err
+	}
+	headSHA, err := g.ResolveCommit(ctx, head)
+	if err != nil {
+		return nil, err
+	}
+	v := &CompareView{Base: base, Head: head, BaseSHA: baseSHA, HeadSHA: headSHA, Commits: []git.Commit{}}
+	if baseSHA == headSHA {
+		v.Identical, v.MergeBase, v.Diff = true, baseSHA, &git.Diff{Files: []git.FileDiff{}}
+		return v, nil
+	}
+	if v.MergeBase, err = g.MergeBase(ctx, baseSHA, headSHA); err != nil {
+		return nil, err
+	}
+	v.BehindBase = v.MergeBase != baseSHA
+	if v.Commits, err = g.Log(ctx, baseSHA+".."+headSHA, git.LogOptions{Limit: MaxCompareCommits}); err != nil {
+		return nil, err
+	}
+	v.AheadBy = len(v.Commits)
+	if v.Commits == nil {
+		v.Commits = []git.Commit{}
+	}
+	v.Diff, err = g.Diff(ctx, baseSHA, headSHA, true)
+	return v, err
+}
+
+// Archive streams a zip or tar.gz of ref to w and returns the suggested file name
+// ("<repo>-<ref>.zip"). Requires read access.
+func (s *Service) Archive(ctx context.Context, actor auth.Actor, owner, name, ref, format string, w io.Writer) error {
+	r, g, sha, err := s.resolve(ctx, actor, owner, name, ref)
+	if err != nil {
+		return err
+	}
+	return g.Archive(ctx, sha, format, r.Name+"-"+strings.ReplaceAll(ref, "/", "-"), w)
 }
 
 // SplitRefPath splits "<ref>/<path>" as used in /tree/ and /blob/ URLs, where the ref may

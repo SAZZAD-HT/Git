@@ -2,6 +2,7 @@ package repos
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -431,6 +432,47 @@ func (s *Service) RemoveCollaborator(ctx context.Context, actor auth.Actor, owne
 	}
 	s.publish(ctx, actor, "repo.collaborator_removed", r.ID, map[string]any{"user_id": u.ID})
 	return nil
+}
+
+// hooksSettingKey records which anvil binary the installed hook scripts point at.
+const hooksSettingKey = "hooks.installed_for"
+
+// EnsureHooks reinstalls the hook scripts in every repository when stamp (the anvil binary
+// path and version) differs from the one recorded at the last installation, as happens
+// after an upgrade or when the binary moves (docs/reference/03 §4.3 step 4). With force it
+// reinstalls regardless (`anvil admin repair-hooks`). It returns how many repositories were
+// updated, and keeps going past repositories that fail, reporting them in the error.
+func (s *Service) EnsureHooks(ctx context.Context, stamp string, force bool) (int, error) {
+	if s.Hooks == nil {
+		return 0, nil
+	}
+	want, _ := json.Marshal(stamp)
+	if !force {
+		if got, err := s.DB.Setting(ctx, hooksSettingKey); err == nil && got == string(want) {
+			return 0, nil
+		}
+	}
+	all, err := s.DB.AllRepos(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var failed []string
+	n := 0
+	for i := range all {
+		p, err := s.PathFor(all[i].OwnerName, all[i].Name)
+		if err == nil {
+			err = s.Hooks.Install(p)
+		}
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", all[i].FullName(), err))
+			continue
+		}
+		n++
+	}
+	if len(failed) > 0 {
+		return n, fmt.Errorf("hooks not installed in %d repositories: %s", len(failed), strings.Join(failed, "; "))
+	}
+	return n, s.DB.Tx(ctx, func(tx *store.Tx) error { return tx.SetSetting(ctx, hooksSettingKey, string(want)) })
 }
 
 func (s *Service) publish(ctx context.Context, actor auth.Actor, typ string, repoID int64, payload any) {

@@ -69,6 +69,9 @@ func (h *handlers) mountRepos(r chi.Router) {
 		r.Get("/blob/*", h.getBlob)
 		r.Get("/raw/*", h.getRaw)
 		r.Get("/commits", h.listCommits)
+		r.Get("/commits/{sha}", h.getCommit)
+		r.Get("/compare/*", h.compare)
+		r.Get("/archive/*", h.archive)
 	})
 }
 
@@ -388,6 +391,62 @@ func (h *handlers) getRaw(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(data)
+}
+
+// getCommit serves GET /api/v1/repos/{o}/{r}/commits/{sha}: one commit with its diff.
+func (h *handlers) getCommit(w http.ResponseWriter, r *http.Request) {
+	o, n := ownerRepo(r)
+	c, err := h.Repos.Commit(r.Context(), auth.ActorFrom(r.Context()), o, n, chi.URLParam(r, "sha"))
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, c)
+}
+
+// compare serves GET /api/v1/repos/{o}/{r}/compare/{base}...{head}. Branch names may
+// contain slashes, so the split is at the "..." separator.
+func (h *handlers) compare(w http.ResponseWriter, r *http.Request) {
+	base, head, ok := strings.Cut(chi.URLParam(r, "*"), "...")
+	if !ok || base == "" || head == "" {
+		WriteError(w, r, errs.FieldErrors{"range": "use /compare/<base>...<head>"})
+		return
+	}
+	o, n := ownerRepo(r)
+	v, err := h.Repos.Compare(r.Context(), auth.ActorFrom(r.Context()), o, n, base, head)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, v)
+}
+
+// archive serves GET /api/v1/repos/{o}/{r}/archive/{ref}.zip (or .tar.gz), streamed.
+func (h *handlers) archive(w http.ResponseWriter, r *http.Request) {
+	tail := chi.URLParam(r, "*")
+	format, ref := "", ""
+	switch {
+	case strings.HasSuffix(tail, ".zip"):
+		format, ref = "zip", strings.TrimSuffix(tail, ".zip")
+	case strings.HasSuffix(tail, ".tar.gz"):
+		format, ref = "tar.gz", strings.TrimSuffix(tail, ".tar.gz")
+	default:
+		WriteError(w, r, fmt.Errorf("archive must end in .zip or .tar.gz: %w", errs.NotFound))
+		return
+	}
+	o, n := ownerRepo(r)
+	actor := auth.ActorFrom(r.Context())
+	// Check access before sending headers, so errors still get a proper status code.
+	if _, err := h.Repos.Get(r.Context(), actor, o, n); err != nil {
+		WriteError(w, r, err)
+		return
+	}
+	ctype := map[string]string{"zip": "application/zip", "tar.gz": "application/gzip"}[format]
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", n+"-"+strings.ReplaceAll(ref, "/", "-")+"."+format))
+	if err := h.Repos.Archive(r.Context(), actor, o, n, ref, format, w); err != nil {
+		WriteError(w, r, err) // only reaches the client if nothing was written yet
+	}
 }
 
 // listCommits serves GET /api/v1/repos/{o}/{r}/commits?ref=&path=&page=&per_page=.

@@ -29,7 +29,7 @@ var commands = []command{
 	{"serve", "Run the server", runServe},
 	{"init", "Create a config file and data directory", runInit},
 	{"migrate", "Apply database migrations without starting", runMigrate},
-	{"admin", "Manage users: create-user, reset-password, promote, deactivate, ...", runAdmin},
+	{"admin", "Administration: create-user, reset-password, promote, deactivate, repair-hooks, ...", runAdmin},
 	{"doctor", "Check config, Git, permissions and database", runDoctor},
 	{"install-service", "Install as a systemd unit or Windows service", runInstallService},
 	{"uninstall-service", "Remove the service", runUninstallService},

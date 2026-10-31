@@ -104,6 +104,12 @@ func serve(ctx context.Context, cfgPath string) error {
 		DB: db, Authorizer: auth.NewAuthorizer(db, cfg.Auth.RequireSigninView), Bus: bus,
 		Hooks: hooks.Installer{AnvilBinary: exe}, ReposDir: filepath.Join(cfg.Storage.DataDir, "repos"),
 	})
+	// 4. Keep every repository's hook scripts pointing at this binary (it may have moved or been upgraded).
+	if n, err := reposSvc.EnsureHooks(ctx, exe+" "+version.Get().Version, false); err != nil {
+		logger.Warn("some repository hooks could not be reinstalled; run `anvil admin repair-hooks`", "err", err)
+	} else if n > 0 {
+		logger.Info("reinstalled repository hooks", "repositories", n)
+	}
 	// The hook API trusts only callers that know this per-process secret (docs/reference/04 §3.1).
 	internalToken, err := randomHex(32)
 	if err != nil {
