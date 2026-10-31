@@ -105,7 +105,14 @@ func build(args []string) error {
 }
 
 func test(args []string) error {
-	return run(nil, "go", append([]string{"test", "-count=1"}, append(args, "./...")...)...)
+	if err := run(nil, "go", append([]string{"test", "-count=1"}, append(args, "./...")...)...); err != nil {
+		return err
+	}
+	// Frontend unit tests, when the web dependencies are installed (devtool build installs them).
+	if _, err := os.Stat(filepath.Join("web", "node_modules")); err == nil {
+		return run(nil, "npm", "--prefix", "web", "test")
+	}
+	return nil
 }
 
 func lint(args []string) error {
