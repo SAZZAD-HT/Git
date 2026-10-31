@@ -11,7 +11,7 @@ There are four API surfaces:
 | Runner API | `/api/runner/v1` | `anvil-runner` | Runner token or job token — see [07](07-ci-cd-design.md) |
 | Internal API | `/internal` | `anvil hook` | `ANVIL_INTERNAL_TOKEN`; bound to `127.0.0.1` only |
 
-An OpenAPI 3.1 file, `api/openapi.yaml`, is the machine-readable contract. TypeScript types for the frontend are **generated** from it (`npm run gen:api`), and a test fails if the Go handlers and the OpenAPI file disagree on routes.
+An OpenAPI 3.1 file, `api/openapi.yaml`, is the machine-readable contract. TypeScript types for the frontend are **generated** from it (`npm run gen:api`, not wired up yet), and `internal/api/openapi_test.go` fails if the router and the OpenAPI file disagree on routes. The tables below include endpoints of later phases; the OpenAPI file lists only what is implemented.
 
 ## 1. Conventions
 
@@ -41,12 +41,12 @@ X-Total-Count: 193
 
 | HTTP | `code` | Meaning |
 |---|---|---|
-| 400 | `bad_request` | Malformed JSON or parameters |
+| 400 | `bad_request` | Reserved. Malformed JSON, a missing `Content-Type: application/json` and unknown fields currently return 422 `validation_failed` |
 | 401 | `unauthenticated` | No or invalid credentials |
 | 403 | `forbidden` | Authenticated but not allowed |
 | 404 | `not_found` | Missing, **or private and the caller has no read access** (we never reveal that a private repo exists) |
 | 409 | `conflict` | State conflict: name taken, merge conflict, base branch moved |
-| 422 | `validation_failed` | `details.fields` maps field → message |
+| 422 | `validation_failed` | Invalid body or fields; `details.fields` maps field → message when known |
 | 429 | `rate_limited` | `Retry-After` header set |
 | 500 | `internal` | Bug. Logged with `request_id` |
 
@@ -54,7 +54,7 @@ Domain errors in services map to these codes in exactly one place: `internal/api
 
 **Request IDs.** Every response carries `X-Request-ID`. It appears in every log line for that request, so a user's bug report can be matched to server logs.
 
-**Rate limits.** Per IP for unauthenticated requests (default 60/min) and per user for authenticated ones (default 5000/hour). Login and Git Basic-auth failures have a stricter limit (10/min per IP).
+**Rate limits.** Per IP for unauthenticated requests (default 60/min) and per user for authenticated ones (default 5000/hour). Login and Git Basic-auth failures have a stricter limit (10/min per IP; sign-in failures also 10/min per username).
 
 **Versioning.** Breaking changes need a new prefix (`/api/v2`). Adding fields is not breaking. Clients must ignore unknown fields.
 
@@ -72,9 +72,10 @@ Domain errors in services map to these codes in exactly one place: `internal/api
 | GET | `/api/v1/user` | U | Current user |
 | PATCH | `/api/v1/user` | U | Update profile |
 | PUT | `/api/v1/user/password` | U | `{current, new}` — invalidates other sessions |
-| GET/POST | `/api/v1/user/tokens` | U | List / create PAT (the plaintext token is returned **once**) |
+| GET/POST | `/api/v1/user/tokens` | U | List / create PAT (the plaintext token is returned **once**). Creating needs a browser session: a token cannot create tokens |
 | DELETE | `/api/v1/user/tokens/{id}` | U | Revoke |
 | GET/DELETE | `/api/v1/user/sessions[/{id}]` | U | List / revoke sessions |
+| GET | `/api/v1/user/repos` | U | Repos you own or collaborate on (at most 100, not paginated) |
 
 ### 2.2 Users
 
@@ -87,13 +88,15 @@ Domain errors in services map to these codes in exactly one place: `internal/api
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/v1/repos` | U | `{name, description, visibility, default_branch, init_readme}` |
-| GET | `/api/v1/repos/{o}/{r}` | R | Repo details, clone URLs, permissions of caller |
-| PATCH | `/api/v1/repos/{o}/{r}` | A | Rename, description, visibility, default branch |
+| POST | `/api/v1/repos` | U | `{name, description, private, default_branch, init_readme}` |
+| GET | `/api/v1/repos/{o}/{r}` | R | Repo details, clone URL, permission of caller |
+| PATCH | `/api/v1/repos/{o}/{r}` | A | `{name?, description?, private?, default_branch?}` |
 | DELETE | `/api/v1/repos/{o}/{r}` | A | Body must contain `{confirm: "<owner>/<name>"}` |
 | POST | `/api/v1/repos/{o}/{r}/forks` | U | Fork into caller's namespace |
-| GET/PUT/DELETE | `/api/v1/repos/{o}/{r}/collaborators[/{username}]` | A | `{role}` |
-| GET/POST/PATCH/DELETE | `/api/v1/repos/{o}/{r}/protected-branches[/{id}]` | A | |
+| GET | `/api/v1/repos/{o}/{r}/collaborators` | R | `[{username, role}]` |
+| PUT/DELETE | `/api/v1/repos/{o}/{r}/collaborators/{username}` | A | `{role}` |
+| GET | `/api/v1/repos/{o}/{r}/protected-branches` | R | |
+| POST/PATCH/DELETE | `/api/v1/repos/{o}/{r}/protected-branches[/{id}]` | A | `{pattern, allow_force_push, allow_delete, require_pull_request, required_checks}` |
 
 ### 2.4 Repository content
 
@@ -103,14 +106,14 @@ Domain errors in services map to these codes in exactly one place: `internal/api
 | POST | `/api/v1/repos/{o}/{r}/branches` | W | `{name, from}` |
 | DELETE | `/api/v1/repos/{o}/{r}/branches/{name}` | W | Respects protection |
 | GET | `/api/v1/repos/{o}/{r}/tags` | R | |
-| GET | `/api/v1/repos/{o}/{r}/tree/{ref}/{path...}` | R | Directory listing with last commit per entry |
-| GET | `/api/v1/repos/{o}/{r}/blob/{ref}/{path...}` | R | File metadata + content (text ≤ 1 MiB, base64 for binary) |
+| GET | `/api/v1/repos/{o}/{r}/tree[/{ref}/{path...}]` | R | Directory listing plus the last commit touching the directory; `/tree` alone is the default branch's root |
+| GET | `/api/v1/repos/{o}/{r}/blob/{ref}/{path...}` | R | File metadata + content (text ≤ 1 MiB; binary and larger files are flagged and have empty content, use `raw`) |
 | GET | `/api/v1/repos/{o}/{r}/raw/{ref}/{path...}` | R | Raw bytes. Served with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` |
-| GET | `/api/v1/repos/{o}/{r}/commits?ref=&path=` | R | Paginated log |
+| GET | `/api/v1/repos/{o}/{r}/commits?ref=&path=` | R | Log; accepts `page`/`per_page` but returns no `Link`/`X-Total-Count` yet |
 | GET | `/api/v1/repos/{o}/{r}/commits/{sha}` | R | Commit + diff (+ pipeline status) |
 | GET | `/api/v1/repos/{o}/{r}/compare/{base}...{head}` | R | Commits + diff |
 | GET | `/api/v1/repos/{o}/{r}/blame/{ref}/{path...}` | R | |
-| GET | `/api/v1/repos/{o}/{r}/archive/{ref}.zip` | R | Streamed `git archive` |
+| GET | `/api/v1/repos/{o}/{r}/archive/{ref}.zip` (or `.tar.gz`) | R | Streamed `git archive` |
 | PUT | `/api/v1/repos/{o}/{r}/contents/{path...}` | W | Create/update one file from the web editor: `{branch, message, content_base64, expected_sha}` |
 
 ### 2.5 Issues
@@ -212,11 +215,16 @@ Bound to `127.0.0.1:<internal_port>` only. Every request needs `Authorization: B
 ## 4. Example: create a PAT and clone
 
 ```bash
-# 1. Log in (browser does this) — or create the token in Settings → Tokens.
-curl -s -X POST https://anvil.local/api/v1/user/tokens \
-  -H "Authorization: Bearer $EXISTING_TOKEN" \
+# 1. Create the token in Settings → Tokens, or sign in and create it with the session.
+#    Only a browser session can create tokens; a token cannot mint more.
+curl -s -c jar.txt -X POST https://anvil.local/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"…"}'
+# → {"user":{…},"csrf_token":"Qm9…"}
+curl -s -b jar.txt -X POST https://anvil.local/api/v1/user/tokens \
+  -H "Content-Type: application/json" -H "X-CSRF-Token: Qm9…" \
   -d '{"name":"laptop","scopes":["repo:write"]}'
-# → {"id":7,"token":"anv_pat_3fX9…","scopes":["repo:write"]}
+# → {"id":7,"name":"laptop","token_prefix":"anv_pat_3fX9","scopes":["repo:write"],…,"token":"anv_pat_3fX9…"}
 
 # 2. Clone with it.
 git clone https://alice:anv_pat_3fX9…@anvil.local/alice/demo.git
