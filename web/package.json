@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.80.7",
+    "dompurify": "3.2.6",
+    "marked": "15.0.12",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-router-dom": "7.6.2"

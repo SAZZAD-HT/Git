@@ -16,9 +16,17 @@ import { PasswordSection } from './features/settings/PasswordSection';
 import { TokensSection } from './features/settings/TokensSection';
 import { SessionsSection } from './features/settings/SessionsSection';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
+import { NewRepoPage } from './features/repo/NewRepoPage';
+import { RepoLayout } from './features/repo/RepoLayout';
+import { CodePage } from './features/repo/CodePage';
+import { BlobPage } from './features/repo/BlobPage';
+import { CommitsPage } from './features/repo/CommitsPage';
+import { RepoSettingsPage } from './features/repo/RepoSettingsPage';
+import { ProfilePage } from './features/users/ProfilePage';
 import { NotFoundPage } from './components/NotFoundPage';
 import './styles/tokens.css';
 import './styles/globals.css';
+import './styles/repo.css';
 
 applyTheme(loadTheme());
 
@@ -46,6 +54,19 @@ const router = createBrowserRouter([
       },
       { path: '/admin/users', element: <RequireAuth admin><AdminUsersPage /></RequireAuth> },
       { path: '/explorer', element: <ExplorerPage /> },
+      { path: '/new', element: <RequireAuth><NewRepoPage /></RequireAuth> },
+      { path: '/:owner', element: <ProfilePage /> },
+      {
+        path: '/:owner/:repo',
+        element: <RepoLayout />,
+        children: [
+          { index: true, element: <CodePage /> },
+          { path: 'tree/*', element: <CodePage /> },
+          { path: 'blob/*', element: <BlobPage /> },
+          { path: 'commits', element: <CommitsPage /> },
+          { path: 'settings', element: <RepoSettingsPage /> },
+        ],
+      },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

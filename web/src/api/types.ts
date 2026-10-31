@@ -44,3 +44,91 @@ export interface BrowserSession {
 export interface Meta {
   allow_registration: boolean;
 }
+
+/** A repository. `permission` is the caller's access level. */
+export interface Repo {
+  id: number;
+  owner: string;
+  name: string;
+  full_name: string;
+  description: string;
+  private: boolean;
+  default_branch: string;
+  empty: boolean;
+  fork: boolean;
+  clone_url: string;
+  permission: 'none' | 'read' | 'write' | 'admin';
+  created_at: string;
+  updated_at: string;
+}
+
+/** One entry of a directory listing. */
+export interface TreeEntry {
+  name: string;
+  path: string;
+  type: 'blob' | 'tree' | 'commit';
+  mode: string;
+  sha: string;
+  size: number;
+}
+
+/** A git identity with a timestamp. */
+export interface Signature {
+  name: string;
+  email: string;
+  when: string;
+}
+
+/** A commit in a history listing. */
+export interface Commit {
+  sha: string;
+  parents: string[];
+  author: Signature;
+  committer: Signature;
+  subject: string;
+  body: string;
+}
+
+/** Body of GET /repos/{o}/{r}/tree/{ref}/{path}. */
+export interface TreeResponse {
+  commit: string;
+  ref: string;
+  path: string;
+  entries: TreeEntry[];
+  last_commit?: Commit;
+}
+
+/** A file at a commit. `content` is empty for binary or too-large files. */
+export interface Blob {
+  commit: string;
+  path: string;
+  sha: string;
+  size: number;
+  binary: boolean;
+  too_large: boolean;
+  content: string;
+}
+
+/** A branch with its head commit. */
+export interface Branch {
+  name: string;
+  commit: string;
+  protected: boolean;
+  is_default: boolean;
+}
+
+/** A collaborator and their role. */
+export interface Collaborator {
+  username: string;
+  role: 'read' | 'write' | 'admin';
+}
+
+/** A branch protection rule. */
+export interface ProtectionRule {
+  id: number;
+  pattern: string;
+  allow_force_push: boolean;
+  allow_delete: boolean;
+  require_pull_request: boolean;
+  required_checks: string[];
+}
