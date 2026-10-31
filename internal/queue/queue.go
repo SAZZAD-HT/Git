@@ -67,7 +67,7 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, opts ...O
 	now := q.now()
 	var id int64
 	err = q.db.Tx(ctx, func(tx *store.Tx) error {
-		id, err = tx.InsertTask(ctx, kind, string(b), now.Add(o.delay).Unix(), now.Unix())
+		id, err = tx.InsertTask(ctx, kind, string(b), now.Add(o.delay).UnixMilli(), now.UnixMilli())
 		return err
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func (q *Queue) RunOne(ctx context.Context) (bool, error) {
 	var row *store.TaskRow
 	err := q.db.Tx(ctx, func(tx *store.Tx) error {
 		var err error
-		row, err = tx.ClaimTask(ctx, q.kinds, now.Unix(), now.Add(q.lease).Unix())
+		row, err = tx.ClaimTask(ctx, q.kinds, now.UnixMilli(), now.Add(q.lease).UnixMilli())
 		return err
 	})
 	if errors.Is(err, errs.NotFound) {
@@ -152,7 +152,7 @@ func (q *Queue) RunOne(ctx context.Context) (bool, error) {
 		}
 		logging.FromContext(ctx).Warn("queue: task failed", "task_id", task.ID, "kind", task.Kind, "attempt", task.Attempts, "err", runErr)
 		backoff := time.Duration(1<<min(task.Attempts, 10)) * time.Second
-		return tx.RetryTask(saveCtx, task.ID, runErr.Error(), q.now().Add(backoff).Unix(), task.Attempts >= MaxAttempts)
+		return tx.RetryTask(saveCtx, task.ID, runErr.Error(), q.now().Add(backoff).UnixMilli(), task.Attempts >= MaxAttempts)
 	})
 }
 

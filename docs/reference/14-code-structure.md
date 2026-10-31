@@ -276,9 +276,11 @@ func (s *Service) Login(ctx context.Context, username, password, ip, ua string) 
 // Logout deletes the session identified by cookie value.
 func (s *Service) Logout(ctx context.Context, cookie string) error
 
-// ActorFromRequest authenticates a request from its session cookie, Bearer token or Basic auth.
-// It returns the anonymous Actor (not an error) when no credentials are present.
-func (s *Service) ActorFromRequest(ctx context.Context, r *http.Request) (Actor, error)
+// Authenticate resolves raw Credentials (session cookie, Bearer token or Basic auth, extracted by
+// httpserver.Authenticate) to an Actor. It returns the anonymous Actor (not an error) when no
+// credentials are present. It takes Credentials rather than *http.Request because service
+// packages must not import net/http (§2).
+func (s *Service) Authenticate(ctx context.Context, c Credentials) (actor Actor, staleCookie bool, err error)
 
 // CreateToken creates a personal access token for userID and returns the plaintext once.
 func (s *Service) CreateToken(ctx context.Context, userID int64, name string, scopes []string, expiresAt *time.Time) (plain string, tok *Token, err error)

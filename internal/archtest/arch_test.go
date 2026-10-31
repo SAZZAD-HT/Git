@@ -78,7 +78,7 @@ func unique(s []string) []string {
 // may import lower ones, never the reverse (docs/reference/14 §2). The longest prefix wins.
 var layers = map[string]int{
 	"internal/errs": 0, "internal/version": 0, "internal/config": 0, "internal/logging": 0,
-	"internal/fsutil": 0, "internal/service": 0,
+	"internal/fsutil": 0, "internal/service": 0, "internal/ratelimit": 0,
 
 	"internal/store": 1, "internal/git": 1, "internal/blob": 1, "internal/events": 1,
 	"internal/queue": 1, "internal/ci/model": 1, "internal/ci/parser": 1, "internal/ci/expr": 1,

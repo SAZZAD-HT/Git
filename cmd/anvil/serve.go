@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"anvil/internal/api"
+	"anvil/internal/auth"
 	"anvil/internal/config"
 	"anvil/internal/events"
 	"anvil/internal/git/gitcmd"
@@ -17,6 +19,7 @@ import (
 	"anvil/internal/queue"
 	"anvil/internal/service"
 	"anvil/internal/store"
+	"anvil/internal/users"
 	"anvil/internal/version"
 	"anvil/web"
 )
@@ -87,7 +90,8 @@ func serve(ctx context.Context, cfgPath string) error {
 
 	// 5. Background machinery.
 	bus := events.NewBus(db)
-	_ = bus // services subscribe from P3 on
+	authSvc, usersSvc := newIdentityServices(cfg, db, bus)
+	go pruneSessions(ctx, authSvc)
 	q := queue.New(db, 10*time.Minute)
 	workCtx, stopWork := context.WithCancel(ctx)
 	waitWorkers := q.Start(workCtx, 4)
@@ -101,8 +105,17 @@ func serve(ctx context.Context, cfgPath string) error {
 			dbCheck{db},
 			gitCheck{},
 		},
-		API: api.Deps{GitVersion: gitVersion.String()},
-		SPA: web.Dist(),
+		API: api.Deps{
+			GitVersion:        gitVersion.String(),
+			Auth:              authSvc,
+			Users:             usersSvc,
+			AllowRegistration: cfg.Auth.AllowRegistration,
+			SecureCookies:     strings.HasPrefix(cfg.Server.PublicURL, "https://"),
+			SessionTTL:        cfg.Auth.SessionTTL.Duration,
+			ClientIP:          httpserver.ClientIP(cfg.Server.TrustedProxies),
+		},
+		Auth: authSvc,
+		SPA:  web.Dist(),
 	})
 	mainLn, internalLn, err := srv.Listen()
 	if err != nil {
@@ -115,6 +128,30 @@ func serve(ctx context.Context, cfgPath string) error {
 	err = srv.Serve(ctx, mainLn, internalLn)
 	logger.Info("stopped")
 	return err
+}
+
+// newIdentityServices builds the auth and users services. Shared by serve and the admin CLI.
+func newIdentityServices(cfg *config.Config, db *store.DB, bus *events.Bus) (*auth.Service, *users.Service) {
+	a := auth.NewService(db, bus, auth.Config{SessionTTL: cfg.Auth.SessionTTL.Duration, AllowPasswordGit: cfg.Auth.AllowPasswordGit})
+	return a, users.NewService(db, a, bus, users.Config{AllowRegistration: cfg.Auth.AllowRegistration})
+}
+
+// pruneSessions deletes expired sessions every hour until ctx ends.
+func pruneSessions(ctx context.Context, a *auth.Service) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		if n, err := a.PruneSessions(ctx); err != nil {
+			logging.FromContext(ctx).Warn("prune sessions", "err", err)
+		} else if n > 0 {
+			logging.FromContext(ctx).Info("pruned expired sessions", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 func ensureDataDirs(dataDir string) error {

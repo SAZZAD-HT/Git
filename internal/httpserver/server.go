@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"anvil/internal/api"
+	"anvil/internal/auth"
 	"anvil/internal/config"
 )
 
@@ -31,6 +32,8 @@ type Deps struct {
 	Logger   *slog.Logger
 	Checkers []ReadyChecker
 	API      api.Deps
+	// Auth authenticates API requests. Nil serves the API without authentication (tests of health endpoints).
+	Auth *auth.Service
 	// SPA is the built web app (index.html at its root). Paths that are not files fall
 	// back to index.html so client-side routes like /alice/demo/pulls work on reload.
 	SPA fs.FS
@@ -54,6 +57,9 @@ func New(deps Deps) *Server {
 		api.WriteError(w, r, fmt.Errorf("no API route %s %s: %w", r.Method, r.URL.Path, errNotFound))
 	})
 	r.Route("/api/v1", func(r chi.Router) {
+		if deps.Auth != nil {
+			r.Use(Authenticate(deps.Auth, deps.API.SecureCookies), RateLimit(DefaultRateConfig, deps.API.ClientIP), CSRF)
+		}
 		r.NotFound(apiNotFound) // otherwise chi answers with plain text inside the sub-router
 		r.MethodNotAllowed(apiNotFound)
 		api.Mount(r, deps.API)

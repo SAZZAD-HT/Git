@@ -83,7 +83,7 @@ type TaskRow struct {
 	LastError string
 }
 
-// InsertTask stores a pending task that may start at runAfter (unix seconds) and returns its id.
+// InsertTask stores a pending task that may start at runAfter (unix milliseconds) and returns its id.
 func (q *Queries) InsertTask(ctx context.Context, kind, payload string, runAfter, now int64) (int64, error) {
 	res, err := q.q.ExecContext(ctx,
 		"INSERT INTO tasks (kind, payload, run_after, created_at) VALUES (?, ?, ?, ?)", kind, payload, runAfter, now)
@@ -133,7 +133,7 @@ func (q *Queries) CompleteTask(ctx context.Context, id int64) error {
 	return err
 }
 
-// RetryTask records a failure and makes task id pending again from runAfter (unix seconds),
+// RetryTask records a failure and makes task id pending again from runAfter (unix milliseconds),
 // or marks it failed for good when final is true.
 func (q *Queries) RetryTask(ctx context.Context, id int64, lastError string, runAfter int64, final bool) error {
 	status := "pending"

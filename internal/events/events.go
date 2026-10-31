@@ -70,7 +70,7 @@ func (b *Bus) Publish(ctx context.Context, ev Event) error {
 	err = b.db.Tx(ctx, func(tx *store.Tx) error {
 		ev.ID, err = tx.InsertEvent(ctx, store.EventRow{
 			Type: ev.Type, RepoID: ev.RepoID, ActorKind: ev.ActorKind, ActorID: ev.ActorID,
-			Payload: string(payload), CreatedAt: ev.CreatedAt.Unix(),
+			Payload: string(payload), CreatedAt: ev.CreatedAt.UnixMilli(),
 		})
 		return err
 	})
@@ -115,7 +115,7 @@ func (b *Bus) Subscribe(ctx context.Context, f Filter, afterID int64) (*Subscrip
 		}
 		for _, r := range rows {
 			ev := Event{ID: r.ID, Type: r.Type, RepoID: r.RepoID, ActorKind: r.ActorKind, ActorID: r.ActorID,
-				Payload: json.RawMessage(r.Payload), CreatedAt: time.Unix(r.CreatedAt, 0).UTC()}
+				Payload: json.RawMessage(r.Payload), CreatedAt: time.UnixMilli(r.CreatedAt).UTC()}
 			if f.match(ev) {
 				ch <- ev
 			}

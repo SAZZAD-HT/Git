@@ -198,6 +198,7 @@ Domain errors in services map to these codes in exactly one place: `internal/api
 | GET | `/healthz` | — | Liveness: `200 ok` |
 | GET | `/readyz` | — | Readiness: DB reachable, git available, migrations current |
 | GET | `/api/v1/version` | — | `{version, commit, build_date, go_version, git_version}` |
+| GET | `/api/v1/meta` | — | Public instance settings the web UI needs before sign-in: `{allow_registration}` |
 
 ## 3. Internal API (hooks)
 

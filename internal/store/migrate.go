@@ -75,7 +75,7 @@ func (db *DB) Migrate(ctx context.Context, dryRun bool) ([]string, error) {
 			if _, err := tx.tx.ExecContext(ctx, m.sql); err != nil {
 				return err
 			}
-			_, err := tx.tx.ExecContext(ctx, "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", m.version, time.Now().Unix())
+			_, err := tx.tx.ExecContext(ctx, "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", m.version, time.Now().UnixMilli())
 			return err
 		})
 		if err != nil {
