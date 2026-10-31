@@ -8,6 +8,10 @@ Guidance for Claude Code sessions (local and cloud) working in this repo.
 
 The design lives in `docs/`. Read `docs/README.md` first: the SRS (requirements), SDD (design, UML in `docs/diagrams/`) and RTM (traceability) are the baseline; `docs/reference/` holds detailed annexes. Docs are the source of truth until code exists. After that, code and docs must agree, and are updated in the same change.
 
+## Where things stand
+
+**Read `docs/PROGRESS.md` before starting work.** It has the phase status, which branches are merged, open items, the next step, and machine setup. Update it at the end of every session in the same commit as the work, so the next session (on any machine) can continue.
+
 ## Rules
 
 - Follow the layer and dependency rules in `docs/reference/14-code-structure.md` §2. Only `internal/git/gitcmd` runs git, only `internal/store` runs SQL.
