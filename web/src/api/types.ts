@@ -187,3 +187,67 @@ export interface CompareView {
   ahead_by: number;
   behind_base: boolean;
 }
+
+/** An issue label. */
+export interface Label {
+  id: number;
+  name: string;
+  /** Hex colour such as `#1d76db`. */
+  color: string;
+}
+
+/** An issue. Issues and pull requests share one number sequence per repository. */
+export interface Issue {
+  number: number;
+  title: string;
+  body: string;
+  state: 'open' | 'closed';
+  is_pull: boolean;
+  author: string;
+  /** Number of plain comments. */
+  comments: number;
+  labels: Label[];
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+}
+
+/** A pull request: an issue plus branches, head commit and merge state. */
+export interface Pull extends Issue {
+  base: string;
+  head: string;
+  head_sha: string;
+  merge_status: 'unknown' | 'checking' | 'clean' | 'conflict';
+  conflict_files: string[];
+  merged: boolean;
+  merged_at?: string;
+  merge_commit_sha?: string;
+}
+
+/**
+ * A timeline entry. `kind` is `comment`, `review` (a review summary, or an inline review
+ * comment when `path` is set) or `system` (an event such as `closed`, `reopened` or
+ * `merged commit … into main`; `author` is who did it).
+ */
+export interface IssueComment {
+  id: number;
+  author: string;
+  body: string;
+  kind: 'comment' | 'review' | 'system';
+  review_state?: 'comment' | 'approve' | 'request_changes';
+  review_id?: number;
+  commit_sha?: string;
+  path?: string;
+  line?: number;
+  side?: 'old' | 'new';
+  created_at: string;
+  updated_at: string;
+}
+
+/** One inline comment in a review being written. */
+export interface DraftComment {
+  path: string;
+  line: number;
+  side: 'old' | 'new';
+  body: string;
+}

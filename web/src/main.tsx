@@ -24,11 +24,16 @@ import { CommitsPage } from './features/repo/CommitsPage';
 import { RepoSettingsPage } from './features/repo/RepoSettingsPage';
 import { CommitPage } from './features/repo/CommitPage';
 import { ComparePage } from './features/repo/ComparePage';
+import { IssuesPage, PullsPage } from './features/issues/IssuesPage';
+import { IssuePage, NewIssuePage } from './features/issues/IssuePage';
+import { LabelsPage } from './features/issues/LabelsPage';
+import { PullPage } from './features/pulls/PullPage';
 import { ProfilePage } from './features/users/ProfilePage';
 import { NotFoundPage } from './components/NotFoundPage';
 import './styles/tokens.css';
 import './styles/globals.css';
 import './styles/repo.css';
+import './styles/issues.css';
 
 applyTheme(loadTheme());
 
@@ -68,6 +73,12 @@ const router = createBrowserRouter([
           { path: 'commits', element: <CommitsPage /> },
           { path: 'commit/:sha', element: <CommitPage /> },
           { path: 'compare/*', element: <ComparePage /> },
+          { path: 'issues', element: <IssuesPage /> },
+          { path: 'issues/new', element: <RequireAuth><NewIssuePage /></RequireAuth> },
+          { path: 'issues/:number', element: <IssuePage /> },
+          { path: 'labels', element: <LabelsPage /> },
+          { path: 'pulls', element: <PullsPage /> },
+          { path: 'pull/:number/*', element: <PullPage /> },
           { path: 'settings', element: <RepoSettingsPage /> },
         ],
       },

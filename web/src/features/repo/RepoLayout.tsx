@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, NavLink, Outlet, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useRepo } from '../../api/hooks/useRepo';
 import type { Repo } from '../../api/types';
@@ -17,6 +17,8 @@ export interface RepoContext {
 export function RepoLayout() {
   const { owner = '', repo: name = '' } = useParams();
   const repo = useRepo(owner, name);
+  const { pathname } = useLocation();
+  const inSection = (seg: string) => pathname.startsWith(`/${owner}/${name}${seg}`);
 
   if (repo.isPending) return <p className="muted">Loading…</p>;
   if (repo.isError) {
@@ -41,6 +43,8 @@ export function RepoLayout() {
       </div>
       <nav className="tabs" aria-label="Repository">
         <NavLink to={base} end>Code</NavLink>
+        <NavLink to={`${base}/issues`} className={({ isActive }) => (isActive || inSection('/labels') ? 'active' : '')}>Issues</NavLink>
+        <NavLink to={`${base}/pulls`} className={({ isActive }) => (isActive || inSection('/pull/') || inSection('/compare') ? 'active' : '')}>Pull requests</NavLink>
         <NavLink to={`${base}/commits`}>Commits</NavLink>
         {r.permission === 'admin' && <NavLink to={`${base}/settings`}>Settings</NavLink>}
       </nav>

@@ -2646,7 +2646,7 @@ components:
       required: [id, author, body, kind, created_at, updated_at]
       properties:
         id: {type: integer, format: int64}
-        author: {type: string, description: Empty for system comments.}
+        author: {type: string, description: 'For system comments, the user who caused the event.'}
         body: {type: string}
         kind: {type: string, enum: [comment, review, system]}
         review_state: {type: string, enum: [comment, approve, request_changes]}

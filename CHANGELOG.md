@@ -4,6 +4,15 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 
 ## Unreleased
 
+### Added (P4 Collaboration)
+
+- Issues: open, edit, close and reopen, comment with Markdown (write and preview tabs), edit or delete your comments, and filter the list by state, label, author or text.
+- Labels: writers create, rename, recolour and delete labels and attach them to issues and pull requests.
+- Pull requests: "Create pull request" on the compare page; Conversation, Commits and Files changed tabs; the branch's new pushes are picked up automatically.
+- Reviews: comment on individual diff lines, then submit the review as a comment, approval or change request. Authors cannot approve their own pull request.
+- Merging: the merge box shows whether the branch merges cleanly (and which files conflict), and writers merge with a merge commit or squash. If someone pushes while you are looking, the merge is refused instead of merging commits you have not seen.
+- Issues and pull requests share one number sequence per repository.
+
 ### Added (P3 Git hosting, in progress)
 
 - Create repositories (public or private, optional README), rename, change default branch, delete with confirmation.
