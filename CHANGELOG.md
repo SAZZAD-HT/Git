@@ -7,10 +7,10 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 ### Added (P2 Identity)
 
 - Sign in and out with username and password; browser sessions with CSRF protection (14-day sliding, 30-day absolute expiry).
-- Self-registration, off by default ().
-- Personal access tokens with scopes (, , , ) and optional expiry, usable as Bearer tokens or as the password for git over HTTP.
+- Self-registration, off by default (`auth.allow_registration`).
+- Personal access tokens with scopes (`repo:read`, `repo:write`, `package:write`, `admin`) and optional expiry, usable as Bearer tokens or as the password for git over HTTP.
 - Change password (ends your other sessions), list and revoke sessions.
-- Site admin: list, create, promote, demote, activate and deactivate users, from the API or with .
+- Site admin: list, create, promote, demote, activate and deactivate users, from the API or with `anvil admin`.
 - Rate limits: 60 requests a minute per IP when anonymous, 5000 an hour per user, 10 failed sign-ins a minute per IP and per username.
 - Passwords: at least 10 characters, not among the 10,000 most common, stored as argon2id.
 
