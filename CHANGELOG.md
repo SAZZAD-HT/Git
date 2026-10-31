@@ -12,6 +12,7 @@ All notable user-visible changes. Format: [Keep a Changelog](https://keepachange
 - Branch protection (exact names or globs such as `release/*`): blocks force-pushes, deletion, and optionally all direct pushes. The default branch cannot be deleted; `refs/pull/*` is read-only.
 - Collaborators with read, write or admin roles. Private repositories return 404 to anyone without access.
 - API for browsing: branches, tags, directory listings, files, raw downloads, commit history.
+- `api/openapi.yaml`: OpenAPI 3.1 contract for every REST endpoint, kept in sync with the router by a test.
 
 ### Added (P2 Identity)
 

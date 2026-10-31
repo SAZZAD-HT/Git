@@ -1,0 +1,2051 @@
+openapi: 3.1.0
+info:
+  title: Anvil REST API
+  version: v1
+  summary: Public REST API of the Anvil forge.
+  description: |
+    The REST API used by the Anvil web app, scripts and the CLI. The web app uses only
+    this API, so anything it can do, a script can do too.
+
+    Conventions (docs/reference/06-api-spec.md §1):
+
+    - Request and response bodies are JSON. Requests with a body must send
+      `Content-Type: application/json`; unknown fields are rejected and bodies are limited
+      to 1 MiB.
+    - JSON fields are `snake_case`; timestamps are RFC 3339 strings in UTC.
+    - List endpoints marked "paginated" accept `page` (from 1) and `per_page` (default 30,
+      max 100) and return `X-Total-Count` and a `Link` header with `next` and `last` URLs.
+    - Every error has the shape of the `Error` schema. Every response carries `X-Request-ID`.
+    - Rate limits: 60 requests a minute per IP when anonymous, 5000 an hour per user;
+      10 failed sign-ins a minute per IP and per username. Over the limit you get 429 with
+      a `Retry-After` header.
+
+    Authentication: a browser session (cookie `anvil_session`, set by `POST /api/v1/auth/login`)
+    plus the `X-CSRF-Token` header on unsafe methods, or a personal access token sent as
+    `Authorization: Bearer anv_pat_...`. Token scopes (`repo:read`, `repo:write`,
+    `package:write`, `admin`) further limit what a token can do. Requests without
+    credentials are anonymous and can read public repositories.
+
+    This file is kept in sync with the Go router by `internal/api/openapi_test.go`.
+  license:
+    name: See repository LICENSE
+servers:
+  - url: /
+    description: The Anvil server this file is served from.
+tags:
+  - name: meta
+    description: Health, readiness, version and public instance settings.
+  - name: auth
+    description: Sign-in, sign-out and self-registration.
+  - name: user
+    description: The signed-in user's profile, password, tokens, sessions and repositories.
+  - name: users
+    description: Public user profiles.
+  - name: admin
+    description: Site administration (site admins only).
+  - name: repos
+    description: Repository settings, collaborators and branch protection.
+  - name: content
+    description: Browsing repository content (branches, tags, files, commits, diffs, archives).
+
+paths:
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: getHealthz
+      summary: Liveness probe
+      description: Returns 200 `ok` while the process is serving HTTP. Not rate limited.
+      security: []
+      responses:
+        '200':
+          description: The process is up.
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: "ok\n"
+
+  /readyz:
+    get:
+      tags: [meta]
+      operationId: getReadyz
+      summary: Readiness probe
+      description: |
+        Runs every readiness check (database, git, migrations) with a 3-second limit.
+        Not rate limited.
+      security: []
+      responses:
+        '200':
+          description: Every check passed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+        '503':
+          description: At least one check failed; `checks` holds the failure messages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+
+  /api/v1/version:
+    get:
+      tags: [meta]
+      operationId: getVersion
+      summary: Server and git versions
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: Build information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/meta:
+    get:
+      tags: [meta]
+      operationId: getMeta
+      summary: Public instance settings
+      description: Settings the web app needs before sign-in.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: Instance settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meta'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Sign in
+      description: |
+        Checks the username and password, sets the `anvil_session` cookie and returns the
+        user and the CSRF token to send in `X-CSRF-Token` on unsafe requests. Failed
+        attempts are limited to 10 a minute per IP and per username.
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              description: The `anvil_session` cookie (HttpOnly, SameSite=Lax).
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Sign out
+      description: Ends the current session, if any, and always clears the session cookie.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - {}
+      responses:
+        '204':
+          description: Signed out.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create an account and sign in
+      description: |
+        Only available when `auth.allow_registration` is true (see `GET /api/v1/meta`).
+        The caller must not be signed in.
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created and signed in.
+          headers:
+            Set-Cookie:
+              description: The `anvil_session` cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user:
+    get:
+      tags: [user]
+      operationId: getCurrentUser
+      summary: The signed-in user
+      description: |
+        For session callers the response also carries the CSRF token, so the web app can
+        recover it after a page reload.
+      security:
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [user]
+      operationId: updateCurrentUser
+      summary: Update your profile
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/password:
+    put:
+      tags: [user]
+      operationId: changePassword
+      summary: Change your password
+      description: Your other sessions end.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/tokens:
+    get:
+      tags: [user]
+      operationId: listTokens
+      summary: List your personal access tokens
+      security:
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: Your tokens, without their secrets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [user]
+      operationId: createToken
+      summary: Create a personal access token
+      description: |
+        Only a browser session may create tokens, so a leaked token cannot mint more.
+        The plaintext token is returned in `token` once and never again.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenRequest'
+      responses:
+        '201':
+          description: The new token, including its plaintext secret.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedToken'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/tokens/{id}:
+    delete:
+      tags: [user]
+      operationId: revokeToken
+      summary: Revoke a personal access token
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Token id.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/sessions:
+    get:
+      tags: [user]
+      operationId: listSessions
+      summary: List your sessions
+      security:
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: Your active sessions; `current` marks the caller's own.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/sessions/{id}:
+    delete:
+      tags: [user]
+      operationId: revokeSession
+      summary: Revoke a session
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Session id as returned by `GET /api/v1/user/sessions`.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/user/repos:
+    get:
+      tags: [user]
+      operationId: listMyRepos
+      summary: Your repositories
+      description: Repositories you own or collaborate on (at most 100; not paginated).
+      security:
+        - sessionCookie: []
+        - bearerToken: []
+      responses:
+        '200':
+          description: The repositories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Repo'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/users/{username}:
+    get:
+      tags: [users]
+      operationId: getUser
+      summary: A user's public profile
+      description: '`email` and `is_active` are included only for the user themself and site admins.'
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/users/{username}/repos:
+    get:
+      tags: [users]
+      operationId: listUserRepos
+      summary: A user's repositories
+      description: The repositories owned by the user that the caller can see. Paginated.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of repositories.
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+            Link:
+              $ref: '#/components/headers/Link'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Repo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/users:
+    get:
+      tags: [admin]
+      operationId: adminListUsers
+      summary: List all users
+      description: Site admins only. Paginated.
+      security:
+        - sessionCookie: []
+        - bearerToken: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of users (with email and flags).
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+            Link:
+              $ref: '#/components/headers/Link'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [admin]
+      operationId: adminCreateUser
+      summary: Create a user
+      description: Site admins only. Works whether or not self-registration is enabled.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateUserRequest'
+      responses:
+        '201':
+          description: The new user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/users/{username}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateUser
+      summary: Promote, demote, activate or deactivate a user
+      description: Site admins only.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateUserRequest'
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos:
+    post:
+      tags: [repos]
+      operationId: createRepo
+      summary: Create a repository
+      description: Creates a repository owned by the caller. Tokens need `repo:write`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepoRequest'
+      responses:
+        '201':
+          description: The new repository.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repo'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [repos]
+      operationId: getRepo
+      summary: Get a repository
+      description: Requires read access. Private repositories return 404 to callers without access.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The repository, with the caller's permission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [repos]
+      operationId: updateRepo
+      summary: Update a repository
+      description: Rename, change description, visibility or default branch. Requires admin access.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepoRequest'
+      responses:
+        '200':
+          description: The updated repository.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repo'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [repos]
+      operationId: deleteRepo
+      summary: Delete a repository
+      description: Requires admin access and a body confirming the full name.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRepoRequest'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/collaborators:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [repos]
+      operationId: listCollaborators
+      summary: List collaborators
+      description: Requires read access.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The collaborators and their roles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Collaborator'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/collaborators/{username}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/Username'
+    put:
+      tags: [repos]
+      operationId: setCollaborator
+      summary: Add a collaborator or change their role
+      description: Requires admin access. The owner cannot be added.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCollaboratorRequest'
+      responses:
+        '204':
+          description: Saved.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [repos]
+      operationId: removeCollaborator
+      summary: Remove a collaborator
+      description: Requires admin access.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/protected-branches:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [repos]
+      operationId: listProtectedBranches
+      summary: List branch protection rules
+      description: Requires read access.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProtectionRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [repos]
+      operationId: createProtectedBranch
+      summary: Create a branch protection rule
+      description: Requires admin access. `pattern` is an exact branch name or a glob such as `release/*`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProtectionRuleInput'
+      responses:
+        '201':
+          description: The new rule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectionRule'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/protected-branches/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: id
+        in: path
+        required: true
+        description: Rule id.
+        schema:
+          type: integer
+          format: int64
+    patch:
+      tags: [repos]
+      operationId: updateProtectedBranch
+      summary: Replace a branch protection rule
+      description: Requires admin access. Every field of the rule is replaced.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProtectionRuleInput'
+      responses:
+        '200':
+          description: The updated rule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectionRule'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [repos]
+      operationId: deleteProtectedBranch
+      summary: Delete a branch protection rule
+      description: Requires admin access.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - bearerToken: ['repo:write']
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/branches:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [content]
+      operationId: listBranches
+      summary: List branches
+      description: Requires read access. Empty repositories have none.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The branches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Branch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/tags:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [content]
+      operationId: listTags
+      summary: List tags
+      description: Requires read access. Annotated tags are peeled to their commit.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The tags, sorted by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ref'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/tree:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [content]
+      operationId: getRootTree
+      summary: List the root directory of the default branch
+      description: Requires read access. Same response as `/tree/{refpath}`.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The directory listing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/tree/{refpath}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/RefPath'
+    get:
+      tags: [content]
+      operationId: getTree
+      summary: List a directory
+      description: |
+        Requires read access. Entries are directories first, then files, each sorted by
+        name. `last_commit` is the latest commit that touched the directory.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The directory listing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/blob/{refpath}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/RefPath'
+    get:
+      tags: [content]
+      operationId: getBlob
+      summary: Get a file
+      description: |
+        Requires read access. Text files up to 1 MiB are returned in `content`. For binary
+        files (`binary`) and larger files (`too_large`) `content` is empty; use `/raw`.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: File metadata and text.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlobResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/raw/{refpath}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - $ref: '#/components/parameters/RefPath'
+    get:
+      tags: [content]
+      operationId: getRaw
+      summary: Download a file
+      description: |
+        Requires read access. Files up to 100 MiB. Always served as an attachment with
+        `X-Content-Type-Options: nosniff` and a sandboxing Content-Security-Policy, so an
+        uploaded HTML or SVG file cannot run scripts on Anvil's origin.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The raw bytes.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="<name>"`.'
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/commits:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+    get:
+      tags: [content]
+      operationId: listCommits
+      summary: List commits
+      description: |
+        Requires read access. History of `ref` (default branch if empty), newest first,
+        optionally limited to commits touching `path`. Accepts `page`/`per_page` but does
+        not return `X-Total-Count` or `Link`.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      parameters:
+        - name: ref
+          in: query
+          description: Branch, tag or commit SHA. Empty means the default branch.
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: Only commits touching this path.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of commits.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Commit'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/commits/{sha}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: sha
+        in: path
+        required: true
+        description: Commit SHA (full or abbreviated) or any ref name.
+        schema:
+          type: string
+    get:
+      tags: [content]
+      operationId: getCommit
+      summary: Get a commit with its diff
+      description: Requires read access. The diff is against the first parent (the whole tree for a root commit).
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The commit and its diff.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/compare/{basehead}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: basehead
+        in: path
+        required: true
+        description: |
+          `<base>...<head>`: two refs or SHAs separated by three dots. Branch names may
+          contain `/`, so this parameter may span several path segments.
+        schema:
+          type: string
+        example: main...feature/login
+    get:
+      tags: [content]
+      operationId: compare
+      summary: Compare two refs
+      description: |
+        Requires read access. The commits on head that are not on base (at most 250) and
+        the three-dot diff since head diverged from base.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The comparison.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompareView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/repos/{owner}/{repo}/archive/{archive}:
+    parameters:
+      - $ref: '#/components/parameters/Owner'
+      - $ref: '#/components/parameters/Repo'
+      - name: archive
+        in: path
+        required: true
+        description: '`<ref>.zip` or `<ref>.tar.gz`. The ref may contain `/`.'
+        schema:
+          type: string
+          pattern: '\.(zip|tar\.gz)$'
+        example: main.zip
+    get:
+      tags: [content]
+      operationId: getArchive
+      summary: Download an archive of a ref
+      description: Requires read access. Streamed `git archive` output.
+      security:
+        - {}
+        - sessionCookie: []
+        - bearerToken: ['repo:read']
+      responses:
+        '200':
+          description: The archive.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="<repo>-<ref>.<format>"` (slashes in the ref become dashes).'
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                contentMediaType: application/zip
+            application/gzip:
+              schema:
+                type: string
+                contentMediaType: application/gzip
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: anvil_session
+      description: Browser session cookie set by `POST /api/v1/auth/login`. Unsafe methods also need `csrfToken`.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: The `csrf_token` returned by login, register or `GET /api/v1/user`. Required with `sessionCookie` on POST, PUT, PATCH and DELETE.
+    bearerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: anv_pat_...
+      description: |
+        Personal access token. The values listed in an operation's security requirement
+        are the token scopes it needs (`repo:write` implies `repo:read`).
+
+  parameters:
+    Owner:
+      name: owner
+      in: path
+      required: true
+      description: Repository owner's username.
+      schema:
+        type: string
+    Repo:
+      name: repo
+      in: path
+      required: true
+      description: Repository name.
+      schema:
+        type: string
+    Username:
+      name: username
+      in: path
+      required: true
+      description: Username.
+      schema:
+        type: string
+    RefPath:
+      name: refpath
+      in: path
+      required: true
+      description: |
+        `<ref>/<path>`: a branch, tag or commit SHA followed by a path in the repository.
+        Refs may contain `/` (`feature/login`); the longest branch or tag name that is a
+        prefix wins, otherwise the first segment is the ref. This parameter spans several
+        path segments.
+      schema:
+        type: string
+      example: main/docs/README.md
+    Page:
+      name: page
+      in: query
+      description: Page number, from 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      description: Items per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 30
+
+  headers:
+    XTotalCount:
+      description: Total number of items across all pages.
+      schema:
+        type: integer
+    Link:
+      description: 'RFC 8288 links to the `next` (when there is one) and `last` pages.'
+      schema:
+        type: string
+      example: '</api/v1/admin/users?page=2&per_page=30>; rel="next", </api/v1/admin/users?page=7&per_page=30>; rel="last"'
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+    XRequestID:
+      description: The request id, also in `request_id` of error bodies and in server logs.
+      schema:
+        type: string
+
+  responses:
+    Error:
+      description: Any error (for example 429 `rate_limited` or 500 `internal`).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: '`unauthenticated`: no or invalid credentials.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: '`forbidden`: authenticated but not allowed, or a missing or wrong `X-CSRF-Token`.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: '`not_found`: missing, or private and the caller has no read access.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: '`conflict`: state conflict, such as a name already taken.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationFailed:
+      description: '`validation_failed`: malformed JSON, wrong Content-Type or invalid fields; `details.fields` maps field to message.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: '`rate_limited`: too many requests or failed sign-ins.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      description: The error body every endpoint returns.
+      required: [error, request_id]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              $ref: '#/components/schemas/ErrorCode'
+            message:
+              type: string
+              description: A sentence for people.
+              example: Repository alice/demo not found
+            details:
+              type: object
+              description: Extra data. For `validation_failed`, `fields` maps field name to message.
+              properties:
+                fields:
+                  type: object
+                  additionalProperties:
+                    type: string
+              additionalProperties: true
+        request_id:
+          type: string
+          description: ULID of the request.
+          example: 01JBX3K9Q2V7Z5M8N4P6R0S1T2
+    ErrorCode:
+      type: string
+      description: |
+        Machine-readable error kind: bad_request (400, reserved), unauthenticated (401),
+        forbidden (403), not_found (404), conflict (409), validation_failed (422),
+        rate_limited (429), internal (500).
+      enum: [bad_request, unauthenticated, forbidden, not_found, conflict, validation_failed, rate_limited, internal]
+
+    ReadyStatus:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          description: Check name to `ok` or the failure message.
+          additionalProperties:
+            type: string
+    VersionInfo:
+      type: object
+      required: [version, commit, build_date, go_version, git_version]
+      properties:
+        version:
+          type: string
+          description: Semantic version of the build, or `dev`.
+        commit:
+          type: string
+          description: Git commit SHA the binary was built from.
+        build_date:
+          type: string
+          description: UTC build time (RFC 3339), or empty.
+        go_version:
+          type: string
+          example: go1.27.3
+        git_version:
+          type: string
+          description: Version of the git binary found at startup.
+          example: 2.53.0
+    Meta:
+      type: object
+      required: [allow_registration]
+      properties:
+        allow_registration:
+          type: boolean
+          description: Whether `POST /api/v1/auth/register` is enabled.
+
+    User:
+      type: object
+      required: [id, username, full_name, is_admin, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        full_name:
+          type: string
+        email:
+          type: string
+          description: Only for the user themself and site admins.
+        is_admin:
+          type: boolean
+        is_active:
+          type: boolean
+          description: Only for the user themself and site admins.
+        created_at:
+          type: string
+          format: date-time
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        password:
+          type: string
+          format: password
+          description: At least 10 characters and not a common password.
+    SessionResponse:
+      type: object
+      required: [user, csrf_token]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        csrf_token:
+          type: string
+          description: Send in `X-CSRF-Token` on unsafe requests made with the session cookie.
+    CurrentUserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        csrf_token:
+          type: string
+          description: Present only when the caller is authenticated by session cookie.
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current, new]
+      properties:
+        current:
+          type: string
+          format: password
+        new:
+          type: string
+          format: password
+    Token:
+      type: object
+      description: A personal access token, without its secret.
+      required: [id, name, token_prefix, scopes, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        token_prefix:
+          type: string
+          description: The first characters of the token, to recognise it.
+          example: anv_pat_3fX9
+        scopes:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/TokenScope'
+        expires_at:
+          type: string
+          format: date-time
+          description: Omitted when the token never expires.
+        last_used_at:
+          type: string
+          format: date-time
+          description: Omitted when the token was never used.
+        created_at:
+          type: string
+          format: date-time
+    TokenScope:
+      type: string
+      enum: ['repo:read', 'repo:write', 'package:write', admin]
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TokenScope'
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: Omit or null for a token that never expires.
+    CreatedToken:
+      allOf:
+        - $ref: '#/components/schemas/Token'
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              description: The plaintext token. Shown once.
+              example: anv_pat_3fX9...
+    Session:
+      type: object
+      required: [id, ip, user_agent, created_at, last_seen_at, current]
+      properties:
+        id:
+          type: string
+        ip:
+          type: string
+        user_agent:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: True for the session making this request.
+    AdminCreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        password:
+          type: string
+          format: password
+        is_admin:
+          type: boolean
+          default: false
+    AdminUpdateUserRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        is_admin:
+          type: boolean
+        is_active:
+          type: boolean
+
+    Repo:
+      type: object
+      required: [id, owner, name, full_name, description, private, default_branch, empty, fork, clone_url, permission, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        owner:
+          type: string
+        name:
+          type: string
+        full_name:
+          type: string
+          example: alice/demo
+        description:
+          type: string
+        private:
+          type: boolean
+        default_branch:
+          type: string
+        empty:
+          type: boolean
+          description: True until the first push.
+        fork:
+          type: boolean
+        clone_url:
+          type: string
+          format: uri
+          example: https://anvil.example.com/alice/demo.git
+        permission:
+          type: string
+          description: The caller's access to this repository.
+          enum: [none, read, write, admin]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateRepoRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        private:
+          type: boolean
+          default: false
+        default_branch:
+          type: string
+          description: Defaults to the server's configured default branch.
+        init_readme:
+          type: boolean
+          default: false
+          description: Create an initial commit with a README.
+    UpdateRepoRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        private:
+          type: boolean
+        default_branch:
+          type: string
+    DeleteRepoRequest:
+      type: object
+      additionalProperties: false
+      required: [confirm]
+      properties:
+        confirm:
+          type: string
+          description: Must equal `<owner>/<name>`.
+    Collaborator:
+      type: object
+      required: [username, role]
+      properties:
+        username:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+    Role:
+      type: string
+      enum: [read, write, admin]
+    SetCollaboratorRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+    ProtectionRule:
+      type: object
+      required: [id, pattern, allow_force_push, allow_delete, require_pull_request, required_checks]
+      properties:
+        id:
+          type: integer
+          format: int64
+        pattern:
+          type: string
+          description: Exact branch name or glob, e.g. `release/*`.
+        allow_force_push:
+          type: boolean
+        allow_delete:
+          type: boolean
+        require_pull_request:
+          type: boolean
+          description: Block all direct pushes.
+        required_checks:
+          type: [array, 'null']
+          items:
+            type: string
+    ProtectionRuleInput:
+      type: object
+      additionalProperties: false
+      required: [pattern]
+      description: A rule to create or replace. `id`, if sent, is ignored (the path decides).
+      properties:
+        id:
+          type: integer
+          format: int64
+        pattern:
+          type: string
+        allow_force_push:
+          type: boolean
+        allow_delete:
+          type: boolean
+        require_pull_request:
+          type: boolean
+        required_checks:
+          type: [array, 'null']
+          items:
+            type: string
+
+    Branch:
+      type: object
+      required: [name, commit, protected, is_default]
+      properties:
+        name:
+          type: string
+        commit:
+          type: string
+          description: SHA of the branch head.
+        protected:
+          type: boolean
+        is_default:
+          type: boolean
+    Ref:
+      type: object
+      required: [name, short, target]
+      properties:
+        name:
+          type: string
+          example: refs/tags/v1.0.0
+        short:
+          type: string
+          example: v1.0.0
+        target:
+          type: string
+          description: Commit SHA (annotated tags are peeled).
+    TreeEntry:
+      type: object
+      required: [name, path, type, mode, sha, size]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+          description: Full path from the repository root, `/`-separated.
+        type:
+          type: string
+          enum: [blob, tree, commit]
+          description: '`commit` is a submodule.'
+        mode:
+          type: string
+          example: '100644'
+        sha:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: Blob size in bytes; -1 for other types.
+    TreeResponse:
+      type: object
+      required: [commit, ref, path, entries]
+      properties:
+        commit:
+          type: string
+          description: The resolved commit SHA.
+        ref:
+          type: string
+          description: The ref as split from the URL (empty for the default branch).
+        path:
+          type: string
+          description: Directory path; empty for the root.
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeEntry'
+        last_commit:
+          $ref: '#/components/schemas/Commit'
+    BlobView:
+      type: object
+      required: [commit, path, sha, size, binary, too_large, content]
+      properties:
+        commit:
+          type: string
+        path:
+          type: string
+        sha:
+          type: string
+        size:
+          type: integer
+          format: int64
+        binary:
+          type: boolean
+        too_large:
+          type: boolean
+          description: Larger than 1 MiB; `content` is empty.
+        content:
+          type: string
+          description: UTF-8 text; empty when `binary` or `too_large`.
+    BlobResponse:
+      type: object
+      required: [ref, blob]
+      properties:
+        ref:
+          type: string
+        blob:
+          $ref: '#/components/schemas/BlobView'
+    Signature:
+      type: object
+      required: [name, email, when]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        when:
+          type: string
+          format: date-time
+          description: RFC 3339 with the author's or committer's own UTC offset.
+    Commit:
+      type: object
+      required: [sha, parents, author, committer, subject, body]
+      properties:
+        sha:
+          type: string
+        parents:
+          type: [array, 'null']
+          items:
+            type: string
+        author:
+          $ref: '#/components/schemas/Signature'
+        committer:
+          $ref: '#/components/schemas/Signature'
+        subject:
+          type: string
+        body:
+          type: string
+    CommitDetail:
+      allOf:
+        - $ref: '#/components/schemas/Commit'
+        - type: object
+          properties:
+            diff:
+              $ref: '#/components/schemas/Diff'
+    Diff:
+      type: object
+      required: [files, additions, deletions, truncated]
+      properties:
+        files:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/FileDiff'
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        truncated:
+          type: boolean
+          description: More files or lines than the limits allow.
+    FileDiff:
+      type: object
+      required: [old_path, new_path, status, binary, additions, deletions, hunks, truncated]
+      properties:
+        old_path:
+          type: string
+        new_path:
+          type: string
+        status:
+          type: string
+          enum: [added, deleted, modified, renamed, copied]
+        binary:
+          type: boolean
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        hunks:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/Hunk'
+        truncated:
+          type: boolean
+          description: Hunks were cut at the per-file line limit.
+    Hunk:
+      type: object
+      required: [header, old_start, new_start, lines]
+      properties:
+        header:
+          type: string
+          description: The full `@@` line, including any function context.
+        old_start:
+          type: integer
+        new_start:
+          type: integer
+        lines:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/DiffLine'
+    DiffLine:
+      type: object
+      required: [kind, old, new, text]
+      properties:
+        kind:
+          type: string
+          enum: [context, add, del]
+        old:
+          type: integer
+          description: Line number in the old version; 0 if the line does not exist there.
+        new:
+          type: integer
+          description: Line number in the new version; 0 if the line does not exist there.
+        text:
+          type: string
+    CompareView:
+      type: object
+      required: [base, head, base_sha, head_sha, merge_base, commits, diff, identical, ahead_by, behind_base]
+      properties:
+        base:
+          type: string
+        head:
+          type: string
+        base_sha:
+          type: string
+        head_sha:
+          type: string
+        merge_base:
+          type: string
+        commits:
+          type: [array, 'null']
+          description: Commits on head that are not on base, at most 250.
+          items:
+            $ref: '#/components/schemas/Commit'
+        diff:
+          oneOf:
+            - $ref: '#/components/schemas/Diff'
+            - type: 'null'
+        identical:
+          type: boolean
+        ahead_by:
+          type: integer
+        behind_base:
+          type: boolean
+          description: Base has commits that head lacks.
